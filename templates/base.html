@@ -1,0 +1,75 @@
+{% load static %}<!DOCTYPE html> {# Загружаем теги для статики #}
+<html lang="ru"> {# Устанавливаем язык документа #}
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Cloud File Storage{% endblock title %}</title> {# Базовый заголовок, можно переопределить #}
+
+    {# Подключение базовых стилей #}
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}"> {# Предполагается, что у вас есть этот файл #}
+</head>
+<body>
+
+    {# ----- HEADER ----- #}
+    <header class="site-header">
+        <div class="container header-container">
+            <div class="logo">
+                {# Ссылка на главную страницу (предполагается URL с именем 'home') #}
+                <a href="#" class="logo-link">Cloud File Storage</a>
+            </div>
+            <nav class="main-navigation">
+                <ul class="nav-list">
+                    {% if user.is_authenticated %}
+                        {# Для авторизованных пользователей #}
+                        <li class="nav-item username">{{ user.username }}</li>
+                        <li class="nav-item">
+                            {# Ссылка на страницу профиля или настроек (предполагается URL 'profile') - опционально #}
+                            {# <a href="{% url 'profile' %}" class="nav-link">Профиль</a> #}
+                        </li>
+                        <li class="nav-item">
+                            {# Ссылка для выхода (предполагается URL с именем 'logout') #}
+                            <a href="#" class="nav-link">Выйти</a>
+                        </li>
+                    {% else %}
+                        {# Для неавторизованных пользователей #}
+                        <li class="nav-item">
+                            {# Ссылка для входа (предполагается URL с именем 'login') #}
+                            <a href="#" class="nav-link">Войти</a>
+                        </li>
+                        <li class="nav-item">
+                            {# Ссылка для регистрации (предполагается URL с именем 'register') #}
+                            <a href="#" class="nav-link">Регистрация</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    {# ----- MAIN CONTENT ----- #}
+    <main class="main-content">
+        <div class="container">
+            {# Блок для основного контента страницы, будет переопределяться дочерними шаблонами #}
+            {% block content %}
+                {# Содержимое по умолчанию, если дочерний шаблон не определит блок #}
+                <p>Добро пожаловать в Cloud File Storage!</p>
+            {% endblock content %}
+        </div>
+    </main>
+
+    {# ----- FOOTER ----- #}
+    <footer class="site-footer">
+        <div class="container footer-container">
+            <p class="copyright">© {% now "Y" %} Cloud File Storage. Все права защищены).</p> {# Год подставляется автоматически #}
+        </div>
+    </footer>
+
+    {# ----- SCRIPTS ----- #}
+    {# Подключение базовых JS файлов #}
+    {# <script src="{% static 'js/base_script.js' %}"></script> #} {# Если есть общий JS #}
+
+    {# Блок для добавления специфичных для страницы JS файлов #}
+    {% block extra_scripts %}{% endblock extra_scripts %}
+
+</body>
+</html>
