@@ -1,19 +1,76 @@
 {% extends 'base.html' %}
 
+{% block title %}
+{{ title }}
+{% endblock title %}
+
 {% block content %}
-    <h1>Авторизация</h1>
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+        <div class="card shadow-sm border-1 rounded-3 mt-5">
+            <div class="card-header bg-dark text-white text-center py-3">
+                <h2 class="mb-0 fs-4">{{ title }}</h2>
+            </div>
+            <div class="card-body p-4">
+                <form method="post" novalidate>
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ next }}"/>
 
-    <form method="post">
-        {% csrf_token %}
-        <input type="hidden" name="next" value="{{ next }}"/>
-        <div class="form-error">{{ form.non_field_errors }}</div>
-        {% for f in form %}
-            <p><label class="form-label" for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}</p>
-            <div class="form-error">{{ f.errors }}</div>
-        {% endfor %}
-        <p>
-            <button type="submit">Войти</button>
-        </p>
-    </form>
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {% for error in form.non_field_errors %}
+                                {{ error }}
+                            {% endfor %}
+                        </div>
+                    {% endif %}
 
+                    {% for field in form %}
+                        <div class="mb-3">
+                            <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+
+                            {% if field.field.widget.input_type == 'password' %}
+                                <input type="password" name="{{ field.name }}"
+                                    id="{{ field.id_for_label }}"
+                                    class="form-control {% if field.errors %}is-invalid{% endif %}"
+                                    {% if field.field.required %}required{% endif %}>
+                            {% elif field.field.widget.input_type == 'checkbox' %}
+                                <div class="form-check">
+                                    <input type="checkbox" name="{{ field.name }}"
+                                        id="{{ field.id_for_label }}"
+                                        class="form-check-input {% if field.errors %}is-invalid{% endif %}"
+                                        {% if field.value %}checked{% endif %}
+                                        {% if field.field.required %}required{% endif %}>
+                                </div>
+                            {% else %}
+                                <input type="text" name="{{ field.name }}"
+                                    id="{{ field.id_for_label }}"
+                                    class="form-control {% if field.errors %}is-invalid{% endif %}"
+                                    {% if field.value %}value="{{ field.value }}"{% endif %}
+                                    {% if field.field.required %}required{% endif %}>
+                            {% endif %}
+
+                            {% if field.errors %}
+                                <div class="invalid-feedback">
+                                    {% for error in field.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                            {% if field.help_text %}
+                                <div class="form-text text-muted small">{{ field.help_text }}</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-dark btn-lg">Войти</button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-footer text-center py-3 bg-light">
+                <p class="mb-0">Нет аккаунта? <a href="#" class="text-decoration-none text-dark">Зарегистрироваться</a></p>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock content %}
