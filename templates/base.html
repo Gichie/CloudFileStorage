@@ -16,7 +16,7 @@
     <header class="p-3 bg-dark text-white">
         <div class="container">
             <div class="d-flex flex-wrap align-items-center justify-content-between">
-                <a href="#" class="d-flex align-items-center mb-2 mb-lg-0 text-white text-decoration-none">
+                <a href="{% url 'file_storage:home' %}" class="d-flex align-items-center mb-2 mb-lg-0 text-white text-decoration-none">
                     <h2 class="header-logo">Cloud File Storage</h2>
                 </a>
 
@@ -25,8 +25,8 @@
                         <span class="me-3">{{ user.username }}</span>
                         <a href="#" class="btn btn-outline-light me-2">Выйти</a>
                     {% else %}
-                        <a href="#" class="btn btn-outline-light me-2">Войти</a>
-                        <a href="#" class="btn btn-primary">Регистрация</a>
+                        <a href="{% url 'users:login' %}" class="btn btn-outline-light me-2">Войти</a>
+                        <a href="{% url 'users:registration' %}" class="btn btn-outline-light">Регистрация</a>
                     {% endif %}
                 </div>
             </div>
@@ -34,7 +34,7 @@
     </header>
 
     <!-- Main Content -->
-    <main class="container py-4 flex-grow-1">
+    <main class="container py-5 flex-grow-1">
         {% if messages %}
             <div class="messages">
                 {% for message in messages %}
