@@ -42,13 +42,6 @@ class RegistrationForm(forms.ModelForm):
         model = User
         fields = ('username', 'email')
 
-    def clean_password(self):
-        form_data = self.cleaned_data
-        password = form_data.get('password')
-        password2 = form_data.get('password2')
-        if password and password2 and password != password2:
-            raise forms.ValidationError('Пароли не совпадают')
-
     def clean_email(self):
         email = self.cleaned_data.get('email')
         if email:
@@ -56,6 +49,17 @@ class RegistrationForm(forms.ModelForm):
             if User.objects.filter(email=email).exists():
                 raise forms.ValidationError('Такой E-mail уже существует')
         return email
+
+    def clean(self):
+        form_data = super().clean()
+
+        password = form_data.get('password')
+        password2 = form_data.get('password2')
+
+        if password and password2 and password != password2:
+            raise forms.ValidationError('Пароли не совпадают')
+
+        return form_data
 
     def save(self, commit=True):
         user = super().save(commit=False)
