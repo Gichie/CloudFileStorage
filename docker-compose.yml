@@ -1,5 +1,6 @@
 volumes:
   postgres-data:
+  static_volume:
 
 services:
   db:
@@ -9,16 +10,31 @@ services:
     env_file: .env
     ports:
       - "5432:5432"
+    restart: always
 
   web:
     build: .
     restart: always
-    command: sh -c "python manage.py migrate &&
-      python manage.py runserver 0.0.0.0:8000"
+    command: >
+      sh -c "python manage.py collectstatic --noinput &&
+             python manage.py migrate &&
+             gunicorn cload_file_storage.wsgi:application --bind 0.0.0.0:8000 -w 3"
     volumes:
       - .:/app
-    ports:
-      - '8000:8000'
+      - static_volume:/app/staticfiles
     env_file: .env
     depends_on:
       - db
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx-server
+    restart: always
+    ports:
+      - "80:8088"
+    volumes:
+      - static_volume:/app/static_collected/:ro
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx_logs:/var/log/nginx
+    depends_on:
+      - web

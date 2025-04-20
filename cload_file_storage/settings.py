@@ -22,8 +22,7 @@ load_dotenv()
 SECRET_KEY = os.environ.get('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
+DEBUG = False
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 
 INSTALLED_APPS = [
@@ -67,7 +66,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'cload_file_storage.wsgi.application'
 
-
 # Database
 DATABASES = {
     "default": {
@@ -79,7 +77,6 @@ DATABASES = {
         "PORT": os.environ.get("POSTGRES_PORT"),
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -104,9 +101,6 @@ AUTHENTICATION_BACKENDS = [
     'users.authentication.EmailAuthBackend',
 ]
 
-# Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
-
 LANGUAGE_CODE = 'ru-RU'
 
 TIME_ZONE = 'Europe/Moscow'
@@ -115,15 +109,28 @@ USE_I18N = True
 
 USE_TZ = True
 
+
 STATIC_URL = 'static/'
 
-# Если папка static находится в корне проекта (рядом с manage.py)
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ]
+
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = 'users:login'
 LOGIN_REDIRECT_URL = 'file_storage:home'
 LOGOUT_REDIRECT_URL = 'users:login'
+
+# Настройка Redis для сессий
+SESSION_ENGINE = 'redis_sessions.session'
+
+SESSION_REDIS = {
+    'host': 'localhost',
+    'port': 6379,
+    'db': 0,
+    'password': None,
+    'prefix': 'session',
+}
