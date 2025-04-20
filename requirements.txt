@@ -7,3 +7,4 @@ python-dotenv==1.1.0
 sqlparse==0.5.3
 tzdata==2025.2
 psycopg2-binary==2.9.10
+django-redis-sessions==0.6.2
