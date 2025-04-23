@@ -17,5 +17,3 @@ RUN mkdir -p /app/logs && \
     touch /app/logs/logs.log && \
     chown -R userdj:groupdjango /app/logs && \
     chmod -R 755 /app/logs
-
-USER userdj

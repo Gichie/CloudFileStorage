@@ -22,7 +22,7 @@ load_dotenv()
 SECRET_KEY = os.environ.get('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 
 INSTALLED_APPS = [
@@ -116,7 +116,7 @@ STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ]
 
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+# STATIC_ROOT = BASE_DIR / 'staticfiles' # for docker
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -128,7 +128,8 @@ LOGOUT_REDIRECT_URL = 'users:login'
 SESSION_ENGINE = 'redis_sessions.session'
 
 SESSION_REDIS = {
-    'host': 'localhost',
+    'host': 'localhost', # для локал
+    # 'host': 'redis', # для docker compose
     'port': 6379,
     'db': 0,
     'password': None,
