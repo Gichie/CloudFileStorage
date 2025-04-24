@@ -26,7 +26,7 @@ services:
 #    command: sh -c "chown -R userdj:groupdjango /app/staticfiles &&
 #                    python manage.py collectstatic --noinput --clear &&
 #                    python manage.py migrate &&
-#                    gunicorn cload_file_storage.wsgi:application \
+#                    gunicorn cloud_file_storage.wsgi:application \
 #                     --bind 0.0.0.0:8000 \
 #                     --user userdj \
 #                     --group groupdjango \

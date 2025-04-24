@@ -1,5 +1,5 @@
 """
-ASGI config for cload_file_storage project.
+ASGI config for cloud_file_storage project.
 
 It exposes the ASGI callable as a module-level variable named ``application``.
 
@@ -11,6 +11,6 @@ import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cload_file_storage.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cloud_file_storage.settings')
 
 application = get_asgi_application()
