@@ -5,7 +5,7 @@ from django.conf import settings
 from testcontainers.postgres import PostgresContainer
 
 
-@pytest.fixture(scope='session') # Запускаем контейнер один раз на всю сессию тестов
+@pytest.fixture(scope='session')
 def postgres_container():
     # Используем образ PostgreSQL
     container = PostgresContainer("postgres:17-alpine")
@@ -15,27 +15,39 @@ def postgres_container():
     finally:
         container.stop()
 
+
 @pytest.fixture(scope='session', autouse=True)
 def override_db_settings(postgres_container):
     """
     Переопределяет настройки базы данных Django для использования
     базы данных из запущенного Testcontainer.
     """
+    # Получаем URL подключения из контейнера
     conn_url = postgres_container.get_connection_url()
+
+    # Разбираем URL для получения компонентов
     parsed_url = urlparse(conn_url)
 
-    bd_name = parsed_url.path.lstrip('/')
+    # Получаем имя базы данных из пути URL
+    db_name = parsed_url.path.lstrip('/')
 
-    settings.DATABASES['default'].update({
+    # Берем параметры напрямую из URL
+    username = parsed_url.username
+    password = parsed_url.password
+    host = parsed_url.hostname
+    port = parsed_url.port
+
+    print(f"DB settings: {db_name}, {username}, {password}, {host}, {port}")
+
+    # Обновляем настройки Django
+    settings.DATABASES['default'] = {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": bd_name,
-        "USER": parsed_url.username,
-        "PASSWORD": parsed_url.password,
-        "HOST": parsed_url.hostname,
-        "PORT": parsed_url.port,
+        "NAME": db_name,
+        "USER": username,
+        "PASSWORD": password,
+        "HOST": host,
+        "PORT": port,
         'OPTIONS': {},
-        'TEST': {
-            'NAME': bd_name
-        }
-    })
-
+        'ATOMIC_REQUESTS': False,  # Добавляем этот параметр
+        'CONN_MAX_AGE': 0,
+    }
