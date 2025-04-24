@@ -56,12 +56,12 @@ class TestUserRegistration(TestCase):
         """Тест: Неуспешная регистрация"""
         # Кол-во пользователей в БД до регистрации
         current_user_num = User.objects.count()
-        sign_up_data = {
+        invalid_sign_up_data = {
             'username': self.valid_username, 'email': 'invalid-email',
             'password': '1', 'password2': 'invalid_password',
         }
 
-        response = self.client.post(self.signup_url, sign_up_data)
+        response = self.client.post(self.signup_url, invalid_sign_up_data)
 
         # Статус 200 (форма с ошибками) вместо редиректа
         self.assertEqual(response.status_code, 200)
