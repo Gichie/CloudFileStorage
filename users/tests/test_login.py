@@ -27,19 +27,20 @@ class TestLogin(TestCase):
         cls.valid_password = 'testpass123'
         cls.valid_email = 'test@sobaka.gav'
         cls.valid_login_data = {'username': cls.valid_username, 'password': cls.valid_password}
+        cls.user = User.objects.create_user(username=cls.valid_username, password=cls.valid_password)
 
     def test_login_view_get(self):
         """Тест: Доступность страницы входа (GET)."""
         response = self.client.get(self.login_url)
-
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'users/login.html')
         self.assertContains(response, 'Авторизация')
         self.assertIsInstance(response.context['form'], LoginUserForm)
+        # Проверка отсутствия ошибок
+        self.assertEqual(response.context['form'].errors, {})
         self.assertNotIn(SESSION_KEY, self.client.session)
 
     def test_successful_login_creates_session(self):
-        user = User.objects.create_user(username=self.valid_username, password=self.valid_password)
         self.assertNotIn(SESSION_KEY, self.client.session)
 
         response = self.client.post(self.login_url, self.valid_login_data)
@@ -48,10 +49,9 @@ class TestLogin(TestCase):
         self.assertIn(SESSION_KEY, self.client.session)
         self.assertIn(BACKEND_SESSION_KEY, self.client.session)
         self.assertIn(HASH_SESSION_KEY, self.client.session)
-        self.assertEqual(self.client.session[SESSION_KEY], str(user.pk))
+        self.assertEqual(self.client.session[SESSION_KEY], str(self.user.pk))
 
     def test_unsuccessful_login_invalid_password(self):
-        User.objects.create_user(username=self.valid_username, password=self.valid_password)
         self.assertNotIn(SESSION_KEY, self.client.session)
 
         invalid_login_data = {'username': self.valid_username, 'password': 'invalid_password'}
@@ -85,7 +85,6 @@ class TestLogin(TestCase):
 
     def test_logout_delete_session(self):
         """Тест: Выход из системы удаляет сессию."""
-        User.objects.create_user(username=self.valid_username, password=self.valid_password)
         self.assertNotIn(SESSION_KEY, self.client.session)
         self.client.post(self.login_url, self.valid_login_data)
         self.assertIn(SESSION_KEY, self.client.session)
@@ -104,7 +103,6 @@ class TestLogin(TestCase):
     @freeze_time("2022-02-24 11:00:00")
     def test_session_expiry_with_db_backend(self):
         """Тест: Проверка, что сессия истекает согласно настройкам. Используется локальная БД."""
-        User.objects.create_user(username=self.valid_username, password=self.valid_password)
         self.client.post(self.login_url, self.valid_login_data)
 
         session_key = self.client.session.session_key
@@ -120,7 +118,6 @@ class TestLogin(TestCase):
 
     @override_settings(SESSION_COOKIE_AGE=1)
     def test_session_expiry_by_redis_sessions(self):
-        User.objects.create_user(username=self.valid_username, password=self.valid_password)
         self.client.post(self.login_url, self.valid_login_data)
 
         response = self.client.get(self.home_url)
