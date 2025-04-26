@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
+from datetime import timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -31,6 +32,7 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'minio_storage',
     'django.contrib.staticfiles',
     'users.apps.UsersConfig',
     'file_storage.apps.FileStorageConfig',
@@ -124,7 +126,7 @@ LOGIN_URL = 'users:login'
 LOGIN_REDIRECT_URL = 'file_storage:home'
 LOGOUT_REDIRECT_URL = 'users:login'
 
-# Настройка Redis для сессий
+# Настройка Redis для хранения сессий
 SESSION_ENGINE = 'redis_sessions.session'
 
 SESSION_REDIS = {
@@ -135,3 +137,16 @@ SESSION_REDIS = {
     'password': None,
     'prefix': 'session',
 }
+
+# Настроки minio
+MINIO_STORAGE_ENDPOINT = os.environ.get("MINIO_STORAGE_ENDPOINT")
+MINIO_STORAGE_ACCESS_KEY = os.environ.get("MINIO_STORAGE_ACCESS_KEY")
+MINIO_STORAGE_SECRET_KEY = os.environ.get("MINIO_STORAGE_SECRET_KEY")
+MINIO_STORAGE_USE_HTTPS = os.environ.get("MINIO_STORAGE_USE_HTTPS")
+MINIO_STORAGE_MEDIA_BUCKET_NAME = os.environ.get("MINIO_STORAGE_MEDIA_BUCKET_NAME")
+MINIO_STORAGE_AUTO_CREATE_MEDIA_BUCKET = True
+MINIO_STORAGE_AUTO_CREATE_MEDIA_POLICY = 'READ_WRITE'
+MINIO_STORAGE_MEDIA_USE_PRESIGNED = True
+MINIO_STORAGE_MEDIA_PRESIGNED_EXPIRY = timedelta(days=6)
+DEFAULT_FILE_STORAGE = 'minio_storage.storage.MinioMediaStorage'
+MEDIA_URL = f"http{'s' if MINIO_STORAGE_USE_HTTPS else ''}://{MINIO_STORAGE_ENDPOINT}/{MINIO_STORAGE_MEDIA_BUCKET_NAME}/"

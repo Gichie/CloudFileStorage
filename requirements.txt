@@ -17,3 +17,7 @@ pytest==8.3.5
 pytest-django==4.11.1
 testcontainers==4.10.0
 django-test-plus==2.2.4
+
+# minio
+boto3==1.38.3
+django-minio-storage==0.5.7
