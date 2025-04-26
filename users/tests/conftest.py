@@ -37,8 +37,6 @@ def override_db_settings(postgres_container):
     host = parsed_url.hostname
     port = parsed_url.port
 
-    print(f"DB settings: {db_name}, {username}, {password}, {host}, {port}")
-
     # Обновляем настройки Django
     settings.DATABASES['default'] = {
         "ENGINE": "django.db.backends.postgresql",
