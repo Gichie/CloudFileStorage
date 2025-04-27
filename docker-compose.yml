@@ -11,7 +11,6 @@ services:
     networks:
       - my_django_network
 
-
   redis:
     image: redis:latest
     container_name: redis_server
@@ -59,6 +58,7 @@ services:
 #    depends_on:
 #      - db
 #      - redis
+#      - minio
 #    networks:
 #      - my_django_network
 #
