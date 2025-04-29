@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h2>Ваши файлы</h2>
+    <a href="{% url 'file_storage:upload_file' %}">Загрузить новый файл</a>
+
+    {% if files %}
+        <ul>
+            {% for file_obj in files %}
+                <li>
+                    <!-- Используем file_obj.download_url или просто file_obj.file.url -->
+                    <a href="{{ file_obj.file.url }}" target="_blank">
+                        {{ file_obj.original_filename }}
+                    </a>
+                    ({{ file_obj.file_size|filesizeformat }}) -
+                    Загружен: {{ file_obj.uploaded_at|date:"Y-m-d H:i" }} -
+                    <form action="#" method="post" style="display: inline;">
+                        {% csrf_token %}
+                        <button type="submit" onclick="return confirm('Вы уверены, что хотите удалить этот файл?');">
+                            Удалить
+                        </button>
+                    </form>
+                </li>
+            {% empty %}
+                <p>У вас пока нет загруженных файлов.</p>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>У вас пока нет загруженных файлов.</p>
+    {% endif %}
+{% endblock %}
