@@ -21,3 +21,72 @@ main {
 .footer {
     margin-top: auto;
 }
+
+
+/* --- Стили для кликабельной зоны (теперь это label) --- */
+#click-zone { /* Теперь это ID для label */
+    display: block; /* Чтобы label вел себя как блочный элемент */
+    border: 2px dashed #ccc;
+    border-radius: 10px;
+    padding: 40px; /* Увеличим padding для большей области */
+    text-align: center;
+    color: #aaa;
+    cursor: pointer;
+    transition: border-color 0.3s, background-color 0.3s;
+    background-color: #f9f9f9;
+}
+
+#click-zone:hover {
+    border-color: #999;
+}
+
+#click-zone.file-selected {
+    border-color: #198754;
+    background-color: #e9f5ff;
+    color: #333;
+}
+
+/* Убираем лишние отступы у параграфа внутри label */
+#click-zone p {
+    margin: 0;
+}
+
+/* Скрываем стандартный input file */
+#id_file {
+    opacity: 0;
+    position: absolute;
+    z-index: -1;
+    width: 0.1px;
+    height: 0.1px;
+    overflow: hidden;
+}
+
+/* Стили для полноэкранного оверлея (остаются без изменений) */
+#fullscreen-drop-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 123, 255, 0.7);
+    z-index: 9999;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    pointer-events: none;
+}
+
+#fullscreen-drop-overlay.visible {
+    display: flex;
+    pointer-events: auto;
+}
+
+#fullscreen-drop-overlay p {
+    color: white;
+    font-size: 2em;
+    font-weight: bold;
+    border: 3px dashed white;
+    padding: 30px;
+    border-radius: 15px;
+}
