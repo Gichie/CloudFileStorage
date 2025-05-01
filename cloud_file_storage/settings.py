@@ -16,6 +16,7 @@ DEBUG = True
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 
 INSTALLED_APPS = [
+    'storages',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -24,16 +25,23 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'users.apps.UsersConfig',
     'file_storage.apps.FileStorageConfig',
-    'storages',
+
 ]
 
-# Настроки minio
-DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+STORAGES = {
+    'default': {
+        'BACKEND': 'storages.backends.s3boto3.S3Boto3Storage',
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
 
+# Настроки minio
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_STORAGE_BUCKET_NAME = 'file-storage-bucket2'  # Имя вашего бакета
-AWS_S3_ENDPOINT_URL = 'http://localhost:9000'  # URL вашего Minio сервера
+AWS_S3_ENDPOINT_URL = 'http://localhost:9000'  # URL Minio сервера
 AWS_S3_REGION_NAME = 'us-east-1'
 AWS_S3_SIGNATURE_VERSION = 's3v4'
 AWS_S3_CUSTOM_DOMAIN = f'localhost:9000/{AWS_STORAGE_BUCKET_NAME}'
@@ -42,6 +50,9 @@ AWS_S3_OBJECT_PARAMETERS = {
 }
 AWS_DEFAULT_ACL = None  # Или 'public-read' если файлы должны быть публичными
 AWS_QUERYSTRING_AUTH = False  # Отключает параметры аутентификации в URL
+
+# Максимальный размер загружаемого файла, хранящегося в оперативной памяти (50 МБ)
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
