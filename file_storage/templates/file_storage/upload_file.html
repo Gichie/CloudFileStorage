@@ -4,137 +4,204 @@
 {% block title %}Загрузка файла - {{ block.super }}{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-8 col-lg-6">
-        <h2 class="mb-4 text-center">Загрузка нового файла</h2>
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <h2 class="mb-4 text-center">Загрузка нового файла</h2>
 
-        {% if form.non_field_errors %}
-            <div class="alert alert-danger" role="alert">
-                {% for error in form.non_field_errors %}
-                    <p class="mb-0">{{ error }}</p>
-                {% endfor %}
-            </div>
-        {% endif %}
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">
+                    {% for error in form.non_field_errors %}
+                        <p class="mb-0">{{ error }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
 
-        <form method="post" enctype="multipart/form-data" novalidate>
-            {% csrf_token %}
+            <form method="post" enctype="multipart/form-data" novalidate>
+                {% csrf_token %}
 
-            {# --- Зона для КЛИКА и отображения ИМЕНИ файла --- #}
-            <div class="mb-3">
-                {# Теперь LABEL имеет ID и стили click-zone #}
-                <label id="click-zone" for="{{ form.file.id_for_label }}">
-                    <p id="click-zone-text">Щёлкните здесь или перетащите файл в любое место окна</p>
-                </label>
+                <div class="mb-3">
+                    <label id="click-zone" for="{{ form.file.id_for_label }}">
+                        <p id="click-zone-text">Щёлкните здесь или перетащите файл в любое место окна</p>
+                    </label>
 
-                {# Само поле ввода файла (скрыто через CSS). Помещаем ПОСЛЕ label #}
-                {{ form.file }}
+                    {{ form.file }}
 
-                 {# Вывод ошибок поля #}
-                {% if form.file.errors %}
-                    <div class="invalid-feedback d-block mt-2">
-                        {% for error in form.file.errors %}
-                            <span>{{ error }}</span>
-                        {% endfor %}
+                    <!-- Контейнер для создания пустого файла -->
+                    <div class="empty-file-creator mt-2">
+                        <div class="input-group">
+                            <input type="text" id="empty-file-name" class="form-control"
+                                   placeholder="Введите имя файла">
+                            <button type="button" id="create-empty-file" class="btn btn-outline-secondary">
+                                Создать пустой файл
+                            </button>
+                        </div>
+                        <small class="form-text text-muted">Оставьте поле пустым для автоматического имени</small>
                     </div>
-                {% endif %}
-                 {# Вывод текста помощи для поля, если он есть #}
-                {% if form.file.help_text %}
-                    <small class="form-text text-muted d-block mt-1">{{ form.file.help_text }}</small>
-                {% endif %}
+
+                    {% if form.file.errors %}
+                        <div class="invalid-feedback d-block mt-2">
+                            {% for error in form.file.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    {% if form.file.help_text %}
+                        <small class="form-text text-muted d-block mt-1">{{ form.file.help_text }}</small>
+                    {% endif %}
+                </div>
+                {# --- Конец зоны для клика --- #}
+
+
+                <div class="d-grid gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary btn-lg">Загрузить</button>
+                </div>
+
+            </form>
+
+            <div class="mt-4 text-center">
+                <a href="{% url 'file_storage:list_files' %}" class="btn btn-secondary">К списку файлов</a>
             </div>
-            {# --- Конец зоны для клика --- #}
 
-
-            <div class="d-grid gap-2 mt-4">
-                 <button type="submit" class="btn btn-primary btn-lg">Загрузить</button>
-            </div>
-
-        </form>
-
-        <div class="mt-4 text-center">
-             <a href="{% url 'file_storage:list_files' %}" class="btn btn-secondary">К списку файлов</a>
         </div>
-
     </div>
-</div>
 
-{# --- Полноэкранный оверлей (без изменений) --- #}
-<div id="fullscreen-drop-overlay">
-    <p>Бросайте файл сюда!</p>
-</div>
+    {# --- Полноэкранный оверлей (без изменений) --- #}
+    <div id="fullscreen-drop-overlay">
+        <p>Бросайте файл сюда!</p>
+    </div>
 
 
-{# --- JavaScript (практически без изменений) --- #}
-<script>
-    document.addEventListener('DOMContentLoaded', () => {
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const clickZone = document.getElementById('click-zone');
+            const fileInput = document.getElementById('{{ form.file.id_for_label }}');
+            const clickZoneText = clickZone.querySelector('#click-zone-text');
+            const overlay = document.getElementById('fullscreen-drop-overlay');
+            const createEmptyFileBtn = document.getElementById('create-empty-file');
+            const emptyFileNameInput = document.getElementById('empty-file-name');
 
-        // Теперь clickZone - это сам label
-        const clickZone = document.getElementById('click-zone');
-        const fileInput = document.getElementById('{{ form.file.id_for_label }}');
-        // Текст ищем внутри clickZone (label)
-        const clickZoneText = clickZone.querySelector('#click-zone-text');
-        const overlay = document.getElementById('fullscreen-drop-overlay');
+            // Проверка на существование элементов (clickZoneText теперь ищется внутри clickZone)
+            if (!clickZone || !fileInput || !clickZoneText || !overlay) {
+                console.error("Не найдены необходимые элементы DOM");
+                if (!clickZone) console.error("clickZone не найден");
+                if (!fileInput) console.error("fileInput не найден");
+                if (!clickZoneText) console.error("clickZoneText не найден");
+                if (!overlay) console.error("overlay не найден");
+                return;
+            }
 
-        // Проверка на существование элементов (clickZoneText теперь ищется внутри clickZone)
-        if (!clickZone || !fileInput || !clickZoneText || !overlay) {
-            console.error("Не найдены необходимые элементы DOM");
-            if (!clickZone) console.error("clickZone не найден");
-            if (!fileInput) console.error("fileInput не найден");
-            if (!clickZoneText) console.error("clickZoneText не найден");
-            if (!overlay) console.error("overlay не найден");
-            return;
-        }
+            // --- Обновление интерфейса при выборе файла ---
+            function updateUIWithFileName(files) {
+                if (files && files.length > 0) {
+                    clickZoneText.textContent = `Выбран файл: ${files[0].name}`;
+                    clickZone.classList.add('file-selected');
+                } else {
+                    clickZoneText.textContent = 'Щёлкните здесь или перетащите файл в любое место окна';
+                    clickZone.classList.remove('file-selected');
+                }
+            }
 
-        // --- Обновление интерфейса при выборе файла ---
-        function updateUIWithFileName(files) {
-            if (files && files.length > 0) {
-                 clickZoneText.textContent = `Выбран файл: ${files[0].name}`;
-                 clickZone.classList.add('file-selected');
+            // --- Обработчик для кнопки создания пустого файла ---
+            if (createEmptyFileBtn) {
+                createEmptyFileBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    console.log("Создаем пустой файл...");
+
+                    // Создаем файл с одним байтом (не пустой, но минимальный)
+                    const emptyContent = new Uint8Array([0]);
+
+                    // Получаем имя файла из поля ввода или генерируем автоматически
+                    let fileName = emptyFileNameInput.value.trim();
+                    if (!fileName) {
+                        const currentDate = new Date();
+                        const timestamp = currentDate.getTime();
+                        fileName = `empty_file_${timestamp}.bin`;
+                    } else {
+                        // Добавляем расширение .bin, если пользователь не указал расширение
+                        if (!fileName.includes('.')) {
+                            fileName += '.bin';
+                        }
+                    }
+
+                    try {
+                        // Создаем файл с минимальным содержимым
+                        const emptyFile = new File([emptyContent], fileName, {
+                            type: "application/octet-stream",
+                            lastModified: new Date().getTime()
+                        });
+
+                        console.log("Созданный файл:", emptyFile);
+                        console.log("Размер файла:", emptyFile.size, "байт");
+                        console.log("Имя файла:", emptyFile.name);
+
+                        // Создаем DataTransfer для установки файла в input
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.items.add(emptyFile);
+
+                        // Устанавливаем файл в input
+                        fileInput.files = dataTransfer.files;
+
+                        // Обновляем интерфейс
+                        updateUIWithFileName(fileInput.files);
+
+                        // Очищаем поле ввода имени файла
+                        emptyFileNameInput.value = '';
+
+                        console.log("Файл установлен в input:", fileInput.files);
+                    } catch (error) {
+                        console.error("Ошибка при создании пустого файла:", error);
+                    }
+                });
             } else {
-                 clickZoneText.textContent = 'Щёлкните здесь или перетащите файл в любое место окна';
-                 clickZone.classList.remove('file-selected');
+                console.error("Кнопка создания пустого файла не найдена");
             }
-        }
 
-        // --- Обработка выбора файла через стандартный диалог (клик по label) ---
-        // Теперь клик по label напрямую работает благодаря 'for', доп. обработчик не нужен.
-        // Но обработчик change все еще нужен для обновления UI
-        fileInput.addEventListener('change', () => {
-            updateUIWithFileName(fileInput.files);
-        });
+            // --- Обработка выбора файла через стандартный диалог (клик по label) ---
+            // Теперь клик по label напрямую работает благодаря 'for', доп. обработчик не нужен.
+            // Но обработчик change все еще нужен для обновления UI
+            fileInput.addEventListener('change', () => {
+                updateUIWithFileName(fileInput.files);
+            });
 
-        // --- Обработка событий Drag and Drop на ВСЕЙ СТРАНИЦЕ (без изменений) ---
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            document.body.addEventListener(eventName, preventDefaults, false);
-        });
-        function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                document.body.addEventListener(eventName, preventDefaults, false);
+            });
 
-        document.body.addEventListener('dragenter', (e) => {
-            if (e.dataTransfer.types.includes('Files')) { overlay.classList.add('visible'); }
-        }, false);
-
-        overlay.addEventListener('dragleave', (e) => {
-            if (e.target === overlay) { overlay.classList.remove('visible'); }
-        }, false);
-
-        document.body.addEventListener('drop', (e) => {
-            overlay.classList.remove('visible');
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            if (files.length > 0) {
-                fileInput.files = files;
-                updateUIWithFileName(files);
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
             }
-        }, false);
 
-        // Этот обработчик все еще полезен, если перетаскивание начнется над зоной
-         clickZone.addEventListener('dragenter', (e) => {
-              if (e.dataTransfer.types.includes('Files')) {
-                 overlay.classList.add('visible');
-             }
-         }, false);
+            document.body.addEventListener('dragenter', (e) => {
+                if (e.dataTransfer.types.includes('Files')) {
+                    overlay.classList.add('visible');
+                }
+            }, false);
 
-    });
-</script>
+            overlay.addEventListener('dragleave', (e) => {
+                if (e.target === overlay) {
+                    overlay.classList.remove('visible');
+                }
+            }, false);
+
+            document.body.addEventListener('drop', (e) => {
+                overlay.classList.remove('visible');
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    updateUIWithFileName(files);
+                }
+            }, false);
+
+            clickZone.addEventListener('dragenter', (e) => {
+                if (e.dataTransfer.types.includes('Files')) {
+                    overlay.classList.add('visible');
+                }
+            }, false);
+
+        });
+    </script>
 
 {% endblock %}
