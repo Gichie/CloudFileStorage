@@ -8,7 +8,6 @@
 
 {% block extra_css %}
     {{ block.super }}
-    <!-- Вынести стили в static/css/file_storage.css -->
     <link rel="stylesheet" href="{% static 'css/style.css' %}">
 {% endblock %}
 
@@ -26,11 +25,6 @@
                 </button>
                 <!-- Кнопка создания папки -->
                 <a href="
-
-
-
-
-
 
                         {% url 'file_storage:create_directory' %}{% if current_folder_id %}?parent_id={{ current_folder_id }}{% endif %}"
                    class="btn btn-secondary">
@@ -77,69 +71,75 @@
             <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 g-3">
                 {% for item in items %}
                     <div class="col">
-                        <a href="{% if item.is_directory %}
-                                     {% url 'file_storage:list_files' %}?path={{ item.name|urlencode }}
-                                 {% endif %}"
-                           class="file-card-link">
-                            <div class="card h-100 file-card">
-                                <div class="card-body text-center d-flex flex-column">
-                                    <!-- Иконка -->
-                                    <div class="item-icon {{ item.is_directory|yesno:'folder-icon,file-icon' }}">
-                                        <i class="fas {{ item.is_directory|yesno:'fa-folder,fa-file-alt' }}"></i>
-                                    </div>
-                                    <!-- Имя файла/папки -->
-                                    <h5 class="card-title mt-auto text-truncate">{{ item.name }}</h5>
-                                    <!-- Размер файла -->
-                                    <p class="card-text-details">
-                                        {% if not item.is_directory and item.file_size %}
-                                            {{ item.file_size|filesizeformat }}
-                                        {% else %}
-                                            {% trans "Папка" %}
-                                        {% endif %}
-                                    </p>
-                                    <!-- Действия -->
-                                    <div class="actions-dropdown dropdown">
-                                        <button class="btn btn-sm btn-light bg-transparent border-0 p-1 dropdown-toggle"
-                                                type="button"
-                                                id="actionsDropdown-{{ forloop.counter }}"
-                                                data-bs-toggle="dropdown"
-                                                aria-expanded="false">
-                                            <i class="fas fa-ellipsis-v text-muted"></i>
-                                        </button>
-                                        <ul class="dropdown-menu dropdown-menu-end"
-                                            aria-labelledby="actionsDropdown-{{ forloop.counter }}">
+                        {% if current_path_unencoded %}
+                            {% with dir_path_unencoded=current_path_unencoded|add:'/'|add:item.name %}
+                                <a href="{% url 'file_storage:list_files' %}?path={{ dir_path_unencoded|urlencode }}"
+                                   class="file-card-link">
+                            {% endwith %}
+                        {% else %}
+                            <a href="{% url 'file_storage:list_files' %}?path={{ item.name|urlencode }}"
+                               class="file-card-link">
+                        {% endif %}
+
+                        <div class="card h-100 file-card">
+                            <div class="card-body text-center d-flex flex-column">
+                                <!-- Иконка -->
+                                <div class="item-icon {{ item.is_directory|yesno:'folder-icon,file-icon' }}">
+                                    <i class="fas {{ item.is_directory|yesno:'fa-folder,fa-file-alt' }}"></i>
+                                </div>
+                                <!-- Имя файла/папки -->
+                                <h5 class="card-title mt-auto text-truncate">{{ item.name }}</h5>
+                                <!-- Размер файла -->
+                                <p class="card-text-details">
+                                    {% if not item.is_directory and item.file_size %}
+                                        {{ item.file_size|filesizeformat }}
+                                    {% else %}
+                                        {% trans "Папка" %}
+                                    {% endif %}
+                                </p>
+                                <!-- Действия -->
+                                <div class="actions-dropdown dropdown">
+                                    <button class="btn btn-sm btn-light bg-transparent border-0 p-1 dropdown-toggle"
+                                            type="button"
+                                            id="actionsDropdown-{{ forloop.counter }}"
+                                            data-bs-toggle="dropdown"
+                                            aria-expanded="false">
+                                        <i class="fas fa-ellipsis-v text-muted"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end"
+                                        aria-labelledby="actionsDropdown-{{ forloop.counter }}">
+                                        <li>
+                                            <a class="dropdown-item"
+                                               href="{% url 'file_storage:rename_item' item.id %}">
+                                                <i class="fas fa-edit fa-fw me-2"></i>{% trans "Переименовать" %}
+                                            </a>
+                                        </li>
+                                        {% if not item.is_directory %}
                                             <li>
-                                                <a class="dropdown-item"
-                                                   href="{% url 'file_storage:rename_item' item.id %}">
-                                                    <i class="fas fa-edit fa-fw me-2"></i>{% trans "Переименовать" %}
+                                                <a class="dropdown-item" href="{{ item.file.url }}"
+                                                   download="{{ item.name }}">
+                                                    <i class="fas fa-download fa-fw me-2"></i>{% trans "Скачать" %}
                                                 </a>
                                             </li>
-                                            {% if not item.is_directory %}
-                                                <li>
-                                                    <a class="dropdown-item" href="{{ item.file.url }}"
-                                                       download="{{ item.name }}">
-                                                        <i class="fas fa-download fa-fw me-2"></i>{% trans "Скачать" %}
-                                                    </a>
-                                                </li>
-                                            {% endif %}
-                                            <li>
-                                                <hr class="dropdown-divider">
-                                            </li>
-                                            <li>
-                                                <form id="delete-form-{{ item.id }}"
-                                                      action="{% url 'file_storage:delete_item' item.id %}"
-                                                      method="post"
-                                                      class="d-inline">
-                                                    {% csrf_token %}
-                                                    <button type="submit" class="dropdown-item text-danger">
-                                                        <i class="fas fa-trash-alt fa-fw me-2"></i>{% trans "Удалить" %}
-                                                    </button>
-                                                </form>
-                                            </li>
-                                        </ul>
-                                    </div>
+                                        {% endif %}
+                                        <li>
+                                            <hr class="dropdown-divider">
+                                        </li>
+                                        <li>
+                                            <form id="delete-form-{{ item.id }}"
+                                                  action="{% url 'file_storage:delete_item' item.id %}"
+                                                  method="post"
+                                                  class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit" class="dropdown-item text-danger">
+                                                    <i class="fas fa-trash-alt fa-fw me-2"></i>{% trans "Удалить" %}
+                                                </button>
+                                            </form>
+                                        </li>
+                                    </ul>
                                 </div>
                             </div>
+                        </div>
                         </a>
                     </div>
                 {% endfor %}
@@ -160,6 +160,7 @@
             <div class="modal-content">
                 <form id="fileUploadModalForm" method="post"
                       action="
+
 
 
 

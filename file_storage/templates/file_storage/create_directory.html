@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <h1>Создать новую папку</h1>
+
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="form-group mb-3">
+            <label for="{{ form.name.id_for_label }}">Название папки:</label>
+            {{ form.name }}
+            {% if form.name.errors %}
+                <div class="alert alert-danger">
+                    {{ form.name.errors }}
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="form-group mb-3">
+            <label for="{{ form.parent.id_for_label }}">Родительская папка:</label>
+            {{ form.parent }}
+            {% if form.parent.errors %}
+                <div class="alert alert-danger">
+                    {{ form.parent.errors }}
+                </div>
+            {% endif %}
+            <small class="form-text text-muted">Оставьте пустым для создания в корневой директории</small>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Создать папку</button>
+        <a href="{% url 'file_storage:list_files' %}{% if request.GET.folder %}?folder={{ request.GET.folder }}{% endif %}" class="btn btn-secondary">Отмена</a>
+    </form>
+</div>
+{% endblock %}
