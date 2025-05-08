@@ -110,3 +110,138 @@ main {
     --bs-alert-bg: #f8d7da;
     --bs-alert-border-color: #f5c2c7;
 }
+
+.file-card-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.file-card-link:hover .card {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.file-card .card-body {
+    text-align: center;
+    padding: 1rem;
+}
+
+.file-card .item-icon {
+    font-size: 3.5rem;
+    margin-bottom: 0.75rem;
+    color: #6c757d;
+}
+
+.file-card .item-icon.folder-icon {
+    color: #ffc107;
+}
+
+.file-card .item-icon.image-icon {
+    color: #198754;
+}
+
+.file-card .item-icon.pdf-icon {
+    color: #dc3545;
+}
+
+.file-card .item-icon.archive-icon {
+    color: #0dcaf0;
+}
+
+.file-card .item-icon.audio-icon {
+    color: #fd7e14;
+}
+
+.file-card .item-icon.video-icon {
+    color: #d63384;
+}
+
+.file-card .card-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    min-height: 2.7em;
+    line-height: 1.35em;
+}
+
+.file-card .card-text-details {
+    font-size: 0.75rem;
+    color: #6c757d;
+    min-height: 1.125em;
+}
+
+.file-card .actions-dropdown .dropdown-toggle::after {
+    display: none;
+}
+
+.file-card .actions-dropdown {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 10;
+}
+
+/* Стили для зоны загрузки и оверлея (из твоего upload_file.html) */
+#uploadClickZone { /* Изменил ID, чтобы был уникальным, если click-zone используется где-то еще */
+    border: 2px dashed #ccc;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    background-color: #f9f9f9;
+    border-radius: 5px;
+    transition: border-color 0.3s, background-color 0.3s;
+}
+
+#uploadClickZone.file-selected {
+    border-color: #28a745; /* Зеленый при выборе файла */
+    background-color: #e9f7ef;
+}
+
+#uploadClickZone.dragover {
+    border-color: #007bff; /* Синий при наведении файла для drag-n-drop */
+    background-color: #e7f3ff;
+}
+
+#uploadClickZone p {
+    margin-bottom: 0;
+}
+
+/* Скрываем стандартный input[type=file] т.к. у нас кастомный UI */
+
+{
+{
+upload_form.file.id_for_label
+
+}
+}
+{
+    display: none
+;
+}
+
+#fullscreen-drop-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 123, 255, 0.7);
+    z-index: 1056; /* Выше чем модальное окно Bootstrap (1050-1055) */
+    display: none; /* Скрыт по умолчанию */
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: white;
+    font-size: 2em;
+}
+
+#fullscreen-drop-overlay.visible {
+    display: flex;
+}
