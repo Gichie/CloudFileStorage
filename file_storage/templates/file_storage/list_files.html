@@ -1,103 +1,537 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
+{% load i18n static %}
+
+{% block title %}
+    {% if current_directory %}{{ current_directory.name }}{% else %}{% trans "Мои файлы" %}{% endif %}
+    - {{ block.super }}
+{% endblock %}
+
+{% block extra_css %}
+    {{ block.super }}
+    {# Твои существующие стили для карточек файлов #}
+    <style>
+        /* ... твои стили для file-card ... */
+        .file-card-link {
+            text-decoration: none;
+            color: inherit;
+            display: block;
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+
+        .file-card-link:hover .card {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .file-card .card-body {
+            text-align: center;
+            padding: 1rem;
+        }
+
+        .file-card .item-icon {
+            font-size: 3.5rem;
+            margin-bottom: 0.75rem;
+            color: #6c757d;
+        }
+
+        .file-card .item-icon.folder-icon {
+            color: #ffc107;
+        }
+
+        .file-card .item-icon.image-icon {
+            color: #198754;
+        }
+
+        .file-card .item-icon.pdf-icon {
+            color: #dc3545;
+        }
+
+        .file-card .item-icon.archive-icon {
+            color: #0dcaf0;
+        }
+
+        .file-card .item-icon.audio-icon {
+            color: #fd7e14;
+        }
+
+        .file-card .item-icon.video-icon {
+            color: #d63384;
+        }
+
+        .file-card .card-title {
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            min-height: 2.7em;
+            line-height: 1.35em;
+        }
+
+        .file-card .card-text-details {
+            font-size: 0.75rem;
+            color: #6c757d;
+            min-height: 1.125em;
+        }
+
+        .file-card .actions-dropdown .dropdown-toggle::after {
+            display: none;
+        }
+
+        .file-card .actions-dropdown {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            z-index: 10;
+        }
+
+        /* Стили для зоны загрузки и оверлея (из твоего upload_file.html) */
+        #uploadClickZone { /* Изменил ID, чтобы был уникальным, если click-zone используется где-то еще */
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            transition: border-color 0.3s, background-color 0.3s;
+        }
+
+        #uploadClickZone.file-selected {
+            border-color: #28a745; /* Зеленый при выборе файла */
+            background-color: #e9f7ef;
+        }
+
+        #uploadClickZone.dragover {
+            border-color: #007bff; /* Синий при наведении файла для drag-n-drop */
+            background-color: #e7f3ff;
+        }
+
+        #uploadClickZone p {
+            margin-bottom: 0;
+        }
+
+        /* Скрываем стандартный input[type=file] т.к. у нас кастомный UI */
+
+        {{ upload_form.file.id_for_label }}
+        {
+            display: none
+        ;
+        }
+
+        #fullscreen-drop-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 123, 255, 0.7);
+            z-index: 1056; /* Выше чем модальное окно Bootstrap (1050-1055) */
+            display: none; /* Скрыт по умолчанию */
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            color: white;
+            font-size: 2em;
+        }
+
+        #fullscreen-drop-overlay.visible {
+            display: flex;
+        }
+    </style>
+{% endblock %}
 
 {% block content %}
-    <div class="container">
-        <h1><a href="{% url 'file_storage:list_files' %}" class="text-dark text-decoration-none">Мои файлы</a></h1>
-        <!-- Навигация - "хлебные крошки" -->
-        <nav aria-label="breadcrumb">
+    <div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="mb-0">
+            {% if current_directory %}{{ current_directory.name }}{% else %}{% trans "Мои файлы" %}{% endif %}
+        </h2>
+        <div>
+            {# Кнопка для открытия модального окна загрузки #}
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadFileModal">
+                <i class="fas fa-upload me-1"></i> {% trans "Загрузить" %}
+            </button>
+            <a href="
+
+
+
+
+                    {% url 'file_storage:create_directory' %}{% if current_folder_id %}?parent_id={{ current_folder_id }}{% endif %}"
+               class="btn btn-secondary">
+                <i class="fas fa-folder-plus me-1"></i> {% trans "Создать папку" %}
+            </a>
+        </div>
+    </div>
+
+    {# Хлебные крошки (твой код) #}
+    {% if breadcrumbs %}
+        <nav aria-label="breadcrumb" class="mb-4">
             <ol class="breadcrumb">
-                {% if breadcrumbs %}
-                    {% for folder in breadcrumbs %}
-                        {% if forloop.last %}
-                            <li class="breadcrumb-item active">{{ folder.name }}</li>
-                        {% else %}
-                            <li class="breadcrumb-item"><a
-                                    href="{% url 'file_storage:list_files' %}?folder={{ folder.id }}">{{ folder.name }}</a>
-                            </li>
-                        {% endif %}
-                    {% endfor %}
-                {% endif %}
+                <li class="breadcrumb-item"><a href="{% url 'file_storage:list_files' %}">{% trans "Корень" %}</a>
+                </li>
+                {% for crumb in breadcrumbs %}
+                    {% if not forloop.last %}
+                        <li class="breadcrumb-item"><a
+                                href="{% url 'file_storage:list_files' %}?path={{ crumb.url_path_encoded }}">{{ crumb.name }}</a>
+                        </li>
+                    {% else %}
+                        <li class="breadcrumb-item active" aria-current="page">{{ crumb.name }}</li>
+                    {% endif %}
+                {% endfor %}
             </ol>
         </nav>
+    {% endif %}
 
-        <!-- Кнопки действий -->
-        <div class="mb-4">
-            <a href="
-                    {% url 'file_storage:upload_file' %}{% if current_folder %}?folder={{ current_folder.id }}{% endif %}"
-               class="btn btn-primary">
-                <i class="fas fa-upload"></i> Загрузить файл
-            </a>
-        {% comment %}
-              <a href="{% url 'file_storage:create_directory' %}{% if current_folder %}?folder={{ current_folder.id }}{% endif %}"
-               class="btn btn-secondary">
-                <i class="fas fa-folder-plus"></i> Создать папку
-            </a>
-        {% endcomment %}
+    {# Сообщения Django #}
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-
+                        {% if message.tags %}{{ message.tags }}{% else %}info{% endif %} alert-dismissible fade show"
+                 role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    {# Список файлов и папок (твой код) #}
+    {% if items %}
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 g-3">
+        {% for item in items %}
+            <div class="col">
+            {% if item.is_directory %}
+                {% comment %} Формируем путь для директории {% endcomment %}
+                {% if current_path_unencoded %}
+                    {% with dir_path_unencoded=current_path_unencoded|add:'/'|add:item.name %}
+                        <a href="{% url 'file_storage:list_files' %}?path={{ dir_path_unencoded|urlencode }}"
+                           class="file-card-link">
+                    {% endwith %}
+                {% else %}
+                    <a href="{% url 'file_storage:list_files' %}?path={{ item.name|urlencode }}"
+                       class="file-card-link">
+                {% endif %}
+            {% else %}
+
+                <div>
+                <a href="{{ item.file.url }}" target="_blank" class="file-card-link">
+            {% endif %}
+        <div class="card h-100 file-card">
+            <div class="card-body d-flex flex-column">
+                <div class="actions-dropdown dropdown">
+                    <button class="btn btn-sm btn-light bg-transparent border-0 p-1 dropdown-toggle"
+                            type="button" id="actionsDropdown-{{ item.id }}" data-bs-toggle="dropdown"
+                            aria-expanded="false" aria-label="{% trans 'Действия с элементом' %}">
+                        <i class="fas fa-ellipsis-v text-muted"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end"
+                        aria-labelledby="actionsDropdown-{{ item.id }}">
+                        <li>
+                            <a class="dropdown-item"
+                               href="{% url 'file_storage:rename_item' item.id %}">
+                                <i class="fas fa-edit fa-fw me-2"></i>{% trans "Переименовать" %}
+                            </a>
+                        </li>
+                        {% if not item.is_directory %}
+                            <li>
+                                <a class="dropdown-item" href="{{ item.file.url }}"
+                                   download="{{ item.name }}">
+                                    <i class="fas fa-download fa-fw me-2"></i>{% trans "Скачать" %}
+                                </a>
+                            </li>
+                        {% endif %}
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li>
+                            <button type="button" class="dropdown-item text-danger delete-confirm-btn"
+                                    data-form-id="delete-form-{{ item.id }}">
+                                <i class="fas fa-trash-alt fa-fw me-2"></i>{% trans "Удалить" %}
+                            </button>
+                            {# Форма для удаления должна быть где-то на странице, не обязательно внутри li #}
+                            {# Но если она здесь, то JS должен ее найти по data-form-id #}
+                        </li>
+                    </ul>
+                </div>
+                {# Форма для удаления, может быть здесь или вынесена за пределы .col, если JS ищет ее глобально по ID #}
+                <form id="delete-form-{{ item.id }}"
+                      action="{% url 'file_storage:delete_item' item.id %}" method="post"
+                      class="d-none">
+                    {% csrf_token %}
+                </form>
+
+                </li>
+                </ul>
+            </div>
+
+            <div class="item-icon
+                                {% if item.is_directory %}folder-icon
+                                {% elif 'image' in item.content_type|default:'' %}image-icon
+                                {% elif 'pdf' in item.content_type|default:'' %}pdf-icon
+                                {% elif 'audio' in item.content_type|default:'' %}audio-icon
+                                {% elif 'video' in item.content_type|default:'' %}video-icon
+                                {% elif 'zip' in item.content_type|default:'' or 'archive' in item.content_type|default:'' %}archive-icon
+                                {% else %}file-icon{% endif %}">
+                <i class="fas
+                                    {% if item.is_directory %}fa-folder
+                                    {% elif 'image' in item.content_type|default:'' %}fa-file-image
+                                    {% elif 'pdf' in item.content_type|default:'' %}fa-file-pdf
+                                    {% elif 'audio' in item.content_type|default:'' %}fa-file-audio
+                                    {% elif 'video' in item.content_type|default:'' %}fa-file-video
+                                    {% elif 'zip' in item.content_type|default:'' or 'archive' in item.content_type|default:'' %}fa-file-archive
+                                    {% else %}fa-file-alt{% endif %}"></i>
+            </div>
+            <h5 class="card-title mt-auto">{{ item.name }}</h5>
+            <p class="card-text-details">
+                {% if not item.is_directory and item.file_size is not None %}
+                    {{ item.file_size|filesizeformat }}
+                {% else %}
+                    {# Для выравнивания высоты #}
+                {% endif %}
+            </p>
         </div>
 
-        <!-- Список файлов и папок -->
-        {% if objects %}
-            <div class="row">
-                {% for item in objects %}
-                    <div class="col-md-3 mb-3">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                {% if item.is_directory %}
-                                    <h5 class="card-title">
-                                        <i class="fas fa-folder"></i>
-                                        <a href="{% url 'file_storage:list_files' %}?folder={{ item.id }}">{{ item.name }}</a>
-                                    </h5>
-                                    <p class="card-text">
-                                        <small class="text-muted">Создана: {{ item.created_at|date:"d.m.Y H:i" }}</small>
-                                    </p>
-                                    <a href="{% url 'file_storage:delete_file' item.id %}"
-                                       class="btn btn-sm btn-danger">
-                                        <i class="fas fa-trash"></i> Удалить
-                                    </a>
-                                {% else %}
-                                    <h5 class="card-title">
-                                        <i class="fas fa-file"></i>
-                                        {{ item.name }}
-                                    </h5>
-                                    <p class="card-text">
-                                        <small class="text-muted">
-                                            Размер: {{ item.file_size|filesizeformat }}<br>
-                                            Загружен: {{ item.created_at|date:"d.m.Y H:i" }}
-                                        </small>
-                                    </p>
-                                    <div class="btn-group">
-                                        <a href="{{ item.file.url }}" class="btn btn-sm btn-primary">
-                                            <i class="fas fa-download"></i> Скачать
-                                        </a>
-                                        {% comment %}
-                                        <a href="{% url 'file_storage:delete_file' item.id %}"
-                                           class="btn btn-sm btn-danger">
-                                            <i class="fas fa-trash"></i> Удалить
-                                        </a>
-                                        {% endcomment %}
-                                    </div>
-                                {% endif %}
+        </a> {# Закрывающий </a> для file-card-link #}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+        <div class="text-center py-5">
+            <i class="fas fa-folder-open fa-4x text-muted mb-3"></i>
+            <p class="lead">{% trans "Эта папка пуста." %}</p>
+            <p>{% trans "Вы можете загрузить файлы или создать новую папку." %}</p>
+        </div>
+    {% endif %}
+</div>
+
+    {# Модальное окно для загрузки файла #}
+    <div class="modal fade" id="uploadFileModal" tabindex="-1" aria-labelledby="uploadFileModalLabel"
+         aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <form id="fileUploadModalForm" method="post" action="
+
+
+
+
+                        {% url 'file_storage:upload_file' %}{% if current_folder_id %}?folder={{ current_folder_id }}{% endif %}"
+                      enctype="multipart/form-data" novalidate>
+                    {% csrf_token %}
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="uploadFileModalLabel">
+                            {% trans "Загрузка файла в" %}:
+                            <code>/{% if current_directory %}{{ current_directory.name }}{% else %}
+                                {% trans "Корень" %}{% endif %}</code>
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        {% if upload_form.non_field_errors %}
+                            <div class="alert alert-danger" role="alert">
+                                {% for error in upload_form.non_field_errors %}
+                                    <p class="mb-0">{{ error }}</p>{% endfor %}
                             </div>
+                        {% endif %}
+
+                        <div class="mb-3">
+                            {# Кастомная зона для клика/перетаскивания #}
+                            <label id="uploadClickZone" for="{{ upload_form.file.id_for_label }}" class="d-block">
+                                <p id="uploadClickZoneText">{% trans "Щёлкните здесь или перетащите файл" %}</p>
+                            </label>
+                            {{ upload_form.file }} {# Само поле <input type="file">, будет скрыто CSS #}
+                            {% if upload_form.file.errors %}
+                                <div class="invalid-feedback d-block mt-1">
+                                    {% for error in upload_form.file.errors %}<span>{{ error }}</span>{% endfor %}
+                                </div>
+                            {% endif %}
+                            {% if upload_form.file.help_text %}
+                                <small class="form-text text-muted d-block mt-1">{{ upload_form.file.help_text }}</small>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="emptyFileNameInputModal"
+                                   class="form-label">{% trans "Или создать пустой файл:" %}</label>
+                            <div class="input-group">
+                                <input type="text" id="emptyFileNameInputModal" class="form-control"
+                                       placeholder="{% trans "Имя для пустого файла (например, new.txt)" %}">
+                                <button type="button" id="createEmptyFileBtnModal"
+                                        class="btn btn-outline-secondary">{% trans "Создать" %}</button>
+                            </div>
+                            <small class="form-text text-muted">{% trans "Если имя не указано, будет сгенерировано автоматически. Расширение по умолчанию .bin, если не указано." %}</small>
                         </div>
                     </div>
-                {% endfor %}
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary"
+                                data-bs-dismiss="modal">{% trans "Отмена" %}</button>
+                        <button type="submit" class="btn btn-primary">{% trans "Загрузить выбранный файл" %}</button>
+                    </div>
+                </form>
             </div>
-        {% else %}
-            <div class="alert alert-info">
-                {% if current_folder %}
-                    Эта папка пуста.
-                {% else %}
-                    У вас еще нет файлов.
-                {% endif %}
-                <a href="
-                        {% url 'file_storage:upload_file' %}{% if current_folder %}?folder={{ current_folder.id }}{% endif %}">Загрузите
-                    файл</a> или
-            {% comment %}
-                <a href="
-                        {% url 'file_storage:create_directory' %}{% if current_folder %}?folder={{ current_folder.id }}{% endif %}">создайте
-                    папку</a>.
-            {% endcomment %}
-            </div>
-        {% endif %}
+        </div>
     </div>
+
+    {# Полноэкранный оверлей для drag-n-drop (из твоего upload_file.html) #}
+    <div id="fullscreen-drop-overlay"><p>{% trans "Бросайте файл сюда!" %}</p></div>
+{% endblock %}
+
+{% block extra_js %}
+    {{ block.super }} {# Не забывай наследовать #}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Твой JS для подтверждения удаления (без изменений)
+            document.querySelectorAll('.delete-confirm-btn').forEach(button => {
+                button.addEventListener('click', function (event) {
+                    const formId = this.dataset.formId;
+                    const form = document.getElementById(formId);
+                    if (form && confirm('{% trans "Вы уверены, что хотите удалить этот элемент?" %}')) {
+                        form.submit();
+                    }
+                });
+            });
+
+            // --- JS для формы загрузки в модальном окне ---
+            const uploadModalElement = document.getElementById('uploadFileModal');
+            if (uploadModalElement) {
+                const uploadForm = document.getElementById('fileUploadModalForm');
+                const fileInput = uploadForm.querySelector('#{{ upload_form.file.id_for_label }}');
+                const clickZone = uploadForm.querySelector('#uploadClickZone');
+                const clickZoneText = clickZone.querySelector('#uploadClickZoneText');
+
+                const emptyFileNameInput = uploadForm.querySelector('#emptyFileNameInputModal');
+                const createEmptyFileBtn = uploadForm.querySelector('#createEmptyFileBtnModal');
+
+                const fullscreenOverlay = document.getElementById('fullscreen-drop-overlay');
+                let bodyDragCounter = 0; // Счетчик для корректной работы dragleave на body
+
+                function updateUploadUI(files) {
+                    if (files && files.length > 0) {
+                        clickZoneText.textContent = `{% trans "Выбран файл:" %} ${files[0].name}`;
+                        clickZone.classList.add('file-selected');
+                    } else {
+                        clickZoneText.textContent = '{% trans "Щёлкните здесь или перетащите файл" %}';
+                        clickZone.classList.remove('file-selected');
+                    }
+                }
+
+                fileInput.addEventListener('change', () => {
+                    updateUploadUI(fileInput.files);
+                });
+
+                createEmptyFileBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const emptyContent = new Uint8Array([0]); // Минимальный непустой файл
+                    let fileName = emptyFileNameInput.value.trim();
+                    if (!fileName) {
+                        fileName = `empty_file_${Date.now()}.bin`;
+                    } else if (!fileName.includes('.')) {
+                        fileName += '.bin'; // Добавляем расширение по умолчанию, если его нет
+                    }
+
+                    try {
+                        const emptyFile = new File([emptyContent], fileName, {
+                            type: "application/octet-stream",
+                            lastModified: Date.now()
+                        });
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.items.add(emptyFile);
+                        fileInput.files = dataTransfer.files;
+                        updateUploadUI(fileInput.files);
+                        emptyFileNameInput.value = ''; // Очищаем поле
+                    } catch (error) {
+                        console.error("Ошибка при создании пустого файла:", error);
+                        // Можно показать сообщение пользователю
+                    }
+                });
+
+                // --- Drag and Drop ---
+                function preventDefaults(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+
+                // Глобальные обработчики для fullscreen-overlay
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    document.body.addEventListener(eventName, (e) => {
+                        preventDefaults(e);
+                        if (e.dataTransfer.types.includes('Files')) {
+                            fullscreenOverlay.classList.add('visible');
+                        }
+                    }, false);
+                });
+
+                // Используем document.body для dragleave, чтобы правильно скрывать оверлей
+                document.body.addEventListener('dragleave', (e) => {
+                    // Проверяем, что ушли именно с body или на элемент вне body
+                    if (e.target === document.body || e.relatedTarget === null || !document.body.contains(e.relatedTarget)) {
+                        bodyDragCounter--;
+                        if (bodyDragCounter <= 0) { // <=0 на случай нескольких быстрых enter/leave
+                            fullscreenOverlay.classList.remove('visible');
+                            bodyDragCounter = 0; // Сброс
+                        }
+                    }
+                }, false);
+
+                document.body.addEventListener('dragenter', (e) => {
+                    if (e.dataTransfer.types.includes('Files')) {
+                        bodyDragCounter++;
+                        fullscreenOverlay.classList.add('visible');
+                    }
+                }, false);
+
+
+                fullscreenOverlay.addEventListener('drop', (e) => {
+                    preventDefaults(e);
+                    fullscreenOverlay.classList.remove('visible');
+                    bodyDragCounter = 0;
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        fileInput.files = files;
+                        updateUploadUI(files);
+                        // Открываем модальное окно, если оно было закрыто
+                        const modal = bootstrap.Modal.getInstance(uploadModalElement) || new bootstrap.Modal(uploadModalElement);
+                        modal.show();
+                    }
+                }, false);
+
+                // Обработчики для clickZone внутри модального окна
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    clickZone.addEventListener(eventName, (e) => {
+                        preventDefaults(e); // Останавливаем всплытие, чтобы body не показал fullscreenOverlay
+                        clickZone.classList.add('dragover');
+                        // Важно: если мы над clickZone, fullscreenOverlay не должен быть виден
+                        fullscreenOverlay.classList.remove('visible');
+                        bodyDragCounter = 0; // сбрасываем счетчик body, т.к. мы уже над целевой зоной
+                    }, false);
+                });
+
+                clickZone.addEventListener('dragleave', (e) => {
+                    preventDefaults(e);
+                    clickZone.classList.remove('dragover');
+                }, false);
+
+                clickZone.addEventListener('drop', (e) => {
+                    preventDefaults(e);
+                    clickZone.classList.remove('dragover');
+                    fullscreenOverlay.classList.remove('visible'); // Убедимся, что он скрыт
+                    bodyDragCounter = 0;
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        fileInput.files = files;
+                        updateUploadUI(files);
+                    }
+                }, false);
+
+                // Очистка формы и UI при закрытии модального окна
+                uploadModalElement.addEventListener('hidden.bs.modal', function () {
+                    uploadForm.reset(); // Сбрасывает значения полей формы
+                    updateUploadUI(null); // Обновляет UI click-zone
+                    // Очистка сообщений об ошибках Django, если они были добавлены динамически (сложнее)
+                    // Проще всего, если страница перезагружается после сабмита (что Django и делает при редиректе)
+                });
+            }
+        });
+    </script>
 {% endblock %}
