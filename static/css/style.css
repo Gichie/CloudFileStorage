@@ -213,17 +213,13 @@ main {
     margin-bottom: 0;
 }
 
-/* Скрываем стандартный input[type=file] т.к. у нас кастомный UI */
 
-{
-{
-upload_form.file.id_for_label
-
-}
-}
-{
-    display: none
-;
+input[type="file"] {
+    opacity: 0;
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    z-index: -1;
 }
 
 #fullscreen-drop-overlay {

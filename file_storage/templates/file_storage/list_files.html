@@ -25,7 +25,6 @@
                 </button>
                 <!-- Кнопка создания папки -->
                 <a href="
-
                         {% url 'file_storage:create_directory' %}{% if current_folder_id %}?parent_id={{ current_folder_id }}{% endif %}"
                    class="btn btn-secondary">
                     <i class="fas fa-folder-plus me-1"></i> {% trans "Создать папку" %}
@@ -160,13 +159,6 @@
             <div class="modal-content">
                 <form id="fileUploadModalForm" method="post"
                       action="
-
-
-
-
-
-
-
                               {% url 'file_storage:upload_file' %}{% if current_folder_id %}?folder={{ current_folder_id }}{% endif %}"
                       enctype="multipart/form-data">
                     {% csrf_token %}
@@ -179,8 +171,8 @@
                     </div>
                     <div class="modal-body">
                         <div class="mb-3">
-                            <label id="uploadClickZone" for="{{ upload_form.file.id_for_label }}" class="d-block">
-                                <p>{% trans "Щёлкните здесь или перетащите файл" %}</p>
+                            <label id="uploadClickZone" for="{{ upload_form.file.id_for_label }}" class="d-block position-relative">
+                                <p id="uploadClickZoneText">Щёлкните здесь или перетащите файл</p>
                             </label>
                             {{ upload_form.file }}
                         </div>
