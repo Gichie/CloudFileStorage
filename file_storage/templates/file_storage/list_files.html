@@ -1,195 +1,282 @@
 {% extends "base.html" %}
-{% load i18n static %}
+{% load static %}
 
-{% block title %}
-    {% if current_directory %}{{ current_directory.name }}{% else %}{% trans "Мои файлы" %}{% endif %}
-    - {{ block.super }}
-{% endblock %}
+{% block title %}Файловое хранилище{% endblock %}
 
 {% block extra_css %}
-    {{ block.super }}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="{% static 'css/style.css' %}">
 {% endblock %}
 
 {% block content %}
     <div class="container mt-4">
-        <!-- Заголовок и действия -->
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'file_storage:list_files' %}"><i
+                        class="bi bi-house-fill"></i></a></li>
+                {% for crumb in breadcrumbs %}
+                    {% if forloop.last and current_directory %}
+                        <li class="breadcrumb-item active" aria-current="page">{{ crumb.name }}</li>
+                    {% else %}
+                        <li class="breadcrumb-item"><a
+                                href="{% url 'file_storage:list_files' %}?path={{ crumb.url_path_encoded }}">{{ crumb.name }}</a>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+            </ol>
+        </nav>
+
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="mb-0">
-                {% if current_directory %}{{ current_directory.name }}{% else %}{% trans "Мои файлы" %}{% endif %}
+            <h2>
+                {% if current_directory %}
+                    Содержимое папки: {{ current_directory.name }}
+                {% else %}
+                    Корневая директория
+                {% endif %}
             </h2>
             <div>
-                <!-- Кнопка загрузки -->
-                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadFileModal">
-                    <i class="fas fa-upload me-1"></i> {% trans "Загрузить" %}
+                <button type="button" class="btn btn-success me-2" data-bs-toggle="modal"
+                        data-bs-target="#createFolderModal">
+                    <i class="bi bi-folder-plus"></i> Создать папку
                 </button>
-                <!-- Кнопка создания папки -->
-                <a href="
-                        {% url 'file_storage:create_directory' %}{% if current_folder_id %}?parent_id={{ current_folder_id }}{% endif %}"
-                   class="btn btn-secondary">
-                    <i class="fas fa-folder-plus me-1"></i> {% trans "Создать папку" %}
-                </a>
             </div>
         </div>
 
-        <!-- Хлебные крошки -->
-        {% if breadcrumbs %}
-            <nav aria-label="breadcrumb" class="mb-4">
-                <ol class="breadcrumb">
-                    <li class="breadcrumb-item">
-                        <a href="{% url 'file_storage:list_files' %}">{% trans "Корень" %}</a>
-                    </li>
-                    {% for crumb in breadcrumbs %}
-                        <li class="breadcrumb-item{% if forloop.last %} active{% endif %}"
-                                {% if not forloop.last %} aria-current="page"{% endif %}>
-                            {% if not forloop.last %}
-                                <a href="{% url 'file_storage:list_files' %}?path={{ crumb.url_path_encoded }}">
-                                    {{ crumb.name }}
-                                </a>
-                            {% else %}
-                                {{ crumb.name }}
-                            {% endif %}
-                        </li>
-                    {% endfor %}
-                </ol>
-            </nav>
-        {% endif %}
+        <!-- Зона для Drag & Drop -->
+        <div id="dropZone" class="drop-zone mb-3" data-current-folder-id="{{ current_folder_id|default_if_none:'' }}">
+            <p>Перетащите файлы сюда или <label for="fileInput" class="text-primary" style="cursor:pointer;">выберите
+                файлы</label> для загрузки.</p>
+            <input type="file" id="fileInput" multiple style="display: none;">
+        </div>
 
-        <!-- Сообщения -->
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        <!-- Список выбранных файлов для загрузки -->
+        <div id="selectedFilesList" class="mb-3" style="display: none;">
+            <h5>Файлы для загрузки:</h5>
+            <ul class="list-group">
+                <!-- Файлы будут добавлены сюда JS-ом -->
+            </ul>
+        </div>
+
+        <!-- Кнопки управления загрузкой -->
+        <div id="uploadActions" class="mb-3" style="display: none;">
+            <button id="startUploadButton" class="btn btn-primary me-2">
+                <i class="bi bi-upload"></i> Загрузить выбранные
+            </button>
+            <button id="clearSelectionButton" class="btn btn-secondary">
+                <i class="bi bi-x-circle"></i> Очистить список
+            </button>
+        </div>
+
+        <!-- Прогресс загрузки -->
+        <div id="uploadProgressContainer" class="mt-2" style="display: none;">
+            <div class="progress">
+                <div id="uploadProgressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                     role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%
                 </div>
-            {% endfor %}
+            </div>
+        </div>
+        <div id="uploadMessages" class="mt-2"></div>
+
+        {% if not items and not current_directory.parent and not current_path_unencoded %}
+            <p class="text-muted">В корневой папке пока нет файлов или папок.</p>
+        {% elif not items %}
+            <p class="text-muted">Эта папка пуста.</p>
         {% endif %}
 
-        <!-- Список файлов и папок -->
-        {% if items %}
-            <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 g-3">
-                {% for item in items %}
-                    <div class="col">
-                        {% if current_path_unencoded %}
-                            {% with dir_path_unencoded=current_path_unencoded|add:'/'|add:item.name %}
-                                <a href="{% url 'file_storage:list_files' %}?path={{ dir_path_unencoded|urlencode }}"
-                                   class="file-card-link">
-                            {% endwith %}
-                        {% else %}
-                            <a href="{% url 'file_storage:list_files' %}?path={{ item.name|urlencode }}"
-                               class="file-card-link">
-                        {% endif %}
+        {% if items or current_directory %}
+            <table class="table table-hover">
+                <thead class="table-light">
+                <tr>
+                    <th scope="col" style="width: 5%;">Тип</th>
+                    <th scope="col">Имя</th>
+                    <th scope="col" style="width: 15%;">Размер</th>
+                    <th scope="col" style="width: 20%;">Дата изменения</th>
+                    <th scope="col" style="width: 15%;">Действия</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% if parent_level_url %}
+                    <tr>
+                        <td><i class="bi bi-arrow-90deg-up fs-4 text-secondary"></i></td>
+                        <td colspan="4">
+                            <a href="{{ parent_level_url }}" class="text-decoration-none">
+                                Назад
+                            </a>
+                        </td>
+                    </tr>
+                {% endif %}
 
-                        <div class="card h-100 file-card">
-                            <div class="card-body text-center d-flex flex-column">
-                                <!-- Иконка -->
-                                <div class="item-icon {{ item.is_directory|yesno:'folder-icon,file-icon' }}">
-                                    <i class="fas {{ item.is_directory|yesno:'fa-folder,fa-file-alt' }}"></i>
-                                </div>
-                                <!-- Имя файла/папки -->
-                                <h5 class="card-title mt-auto text-truncate">{{ item.name }}</h5>
-                                <!-- Размер файла -->
-                                <p class="card-text-details">
-                                    {% if not item.is_directory and item.file_size %}
-                                        {{ item.file_size|filesizeformat }}
-                                    {% else %}
-                                        {% trans "Папка" %}
-                                    {% endif %}
-                                </p>
-                                <!-- Действия -->
-                                <div class="actions-dropdown dropdown">
-                                    <button class="btn btn-sm btn-light bg-transparent border-0 p-1 dropdown-toggle"
-                                            type="button"
-                                            id="actionsDropdown-{{ forloop.counter }}"
-                                            data-bs-toggle="dropdown"
-                                            aria-expanded="false">
-                                        <i class="fas fa-ellipsis-v text-muted"></i>
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end"
-                                        aria-labelledby="actionsDropdown-{{ forloop.counter }}">
-                                        <li>
-                                            <a class="dropdown-item"
-                                               href="{% url 'file_storage:rename_item' item.id %}">
-                                                <i class="fas fa-edit fa-fw me-2"></i>{% trans "Переименовать" %}
-                                            </a>
-                                        </li>
-                                        {% if not item.is_directory %}
-                                            <li>
-                                                <a class="dropdown-item" href="{{ item.file.url }}"
-                                                   download="{{ item.name }}">
-                                                    <i class="fas fa-download fa-fw me-2"></i>{% trans "Скачать" %}
-                                                </a>
-                                            </li>
-                                        {% endif %}
-                                        <li>
-                                            <hr class="dropdown-divider">
-                                        </li>
-                                        <li>
-                                            <form id="delete-form-{{ item.id }}"
-                                                  action="{% url 'file_storage:delete_item' item.id %}"
-                                                  method="post"
-                                                  class="d-inline">
-                                                {% csrf_token %}
-                                                <button type="submit" class="dropdown-item text-danger">
-                                                    <i class="fas fa-trash-alt fa-fw me-2"></i>{% trans "Удалить" %}
-                                                </button>
-                                            </form>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                        </a>
-                    </div>
+                {% for item in items %}
+                    <tr>
+                        <td>
+                            {% if item.is_directory %}
+                                <i class="bi bi-folder-fill fs-4 text-primary"></i>
+                            {% else %}
+                                <i class="bi bi-file-earmark-text fs-4 text-secondary"></i>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if item.is_directory %}
+                                <a href="{% url 'file_storage:list_files' %}?path={{ item.get_path_for_url }}"
+                                   class="text-decoration-none">{{ item.name }}</a>
+                            {% else %}
+                                {{ item.name }}
+                                {# <a href="{% url 'download_file' item.id %}" >{{ item.name }}</a> #}
+                            {% endif %}
+                        </td>
+                        <td>{% if not item.is_directory and item.file_size is not None %}
+                            {{ item.file_size|filesizeformat }}{% else %}—{% endif %}</td>
+                        <td>{{ item.last_modified|date:"d.m.Y H:i" }}</td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal"
+                                    data-bs-target="#renameModal" data-item-id="{{ item.id }}"
+                                    data-item-name="{{ item.name }}"
+                                    data-item-type="{% if item.is_directory %}folder{% else %}file{% endif %}">
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal"
+                                    data-bs-target="#deleteModal" data-item-id="{{ item.id }}"
+                                    data-item-name="{{ item.name }}"
+                                    data-item-type="{% if item.is_directory %}папку{% else %}файл{% endif %}">
+                                <i class="bi bi-trash3"></i>
+                            </button>
+                            {% if not item.is_directory %}
+                                <a href="#" class="btn btn-sm btn-outline-success"
+                                   title="Скачать">
+                                    <i class="bi bi-download"></i>
+                                </a>
+                            {% endif %}
+                        </td>
+                    </tr>
                 {% endfor %}
-            </div>
-        {% else %}
-            <div class="text-center py-5">
-                <i class="fas fa-folder-open fa-4x text-muted mb-3"></i>
-                <p class="lead">{% trans "Эта папка пуста." %}</p>
-                <p>{% trans "Вы можете загрузить файлы или создать новую папку." %}</p>
-            </div>
+                </tbody>
+            </table>
         {% endif %}
     </div>
 
-    <!-- Модальное окно загрузки -->
-    <div class="modal fade" id="uploadFileModal" tabindex="-1" aria-labelledby="uploadFileModalLabel"
+    <!-- Модальное окно "Создать папку" -->
+    <div class="modal fade" id="createFolderModal" tabindex="-1" aria-labelledby="createFolderModalLabel"
          aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog">
             <div class="modal-content">
-                <form id="fileUploadModalForm" method="post"
-                      action="
-                              {% url 'file_storage:upload_file' %}{% if current_folder_id %}?folder={{ current_folder_id }}{% endif %}"
-                      enctype="multipart/form-data">
+                <form method="post" action="{% url 'file_storage:create_folder' %}">
+                    {# Замените 'create_folder' на ваш URL #}
                     {% csrf_token %}
+                    <input type="hidden" name="parent_id" value="{{ current_folder_id|default_if_none:'' }}">
                     <div class="modal-header">
-                        <h5 class="modal-title" id="uploadFileModalLabel">
-                            {% trans "Загрузка файла в" %}
-                            <code>{{ current_directory.name|default:"Корень" }}</code>
-                        </h5>
+                        <h5 class="modal-title" id="createFolderModalLabel">Создать новую папку</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
                         <div class="mb-3">
-                            <label id="uploadClickZone" for="{{ upload_form.file.id_for_label }}" class="d-block position-relative">
-                                <p id="uploadClickZoneText">Щёлкните здесь или перетащите файл</p>
-                            </label>
-                            {{ upload_form.file }}
+                            <label for="folderName" class="form-label">Имя папки</label>
+                            <input type="text" class="form-name form-control" id="folderName" name="name" required>
                         </div>
-                        <small class="form-text text-muted">{% trans "Поддерживаются стандартные форматы." %}</small>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary"
-                                data-bs-dismiss="modal">{% trans "Отмена" %}</button>
-                        <button type="submit" class="btn btn-primary">{% trans "Загрузить" %}</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                        <button type="submit" class="btn btn-primary">Создать</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
+
+    <!-- Модальное окно "Переименовать" -->
+    <div class="modal fade" id="renameModal" tabindex="-1" aria-labelledby="renameModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="post" action="{% url 'file_storage:rename' %}"> {# Замените 'rename_item' на ваш URL #}
+                    {% csrf_token %}
+                    <input type="hidden" name="item_id" id="renameItemId">
+                    <input type="hidden" name="item_type" id="renameItemType">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="renameModalLabel">Переименовать</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="newItemName" class="form-label">Новое имя</label>
+                            <input type="text" class="form-control" id="newItemName" name="new_name" required>
+                            <small id="renameItemTypeLabel" class="form-text text-muted"></small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                        <button type="submit" class="btn btn-primary">Переименовать</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно "Удалить" -->
+    <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="post" action="{% url 'file_storage:delete_item' %}">
+                    {# Замените 'delete_item' на ваш URL #}
+                    {% csrf_token %}
+                    <input type="hidden" name="item_id" id="deleteItemId">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="deleteModalLabel">Подтверждение удаления</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Вы уверены, что хотите удалить <strong id="deleteItemType"></strong> "<strong
+                                id="deleteItemName"></strong>"?</p>
+                        <p class="text-danger">Это действие необратимо.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                        <button type="submit" class="btn btn-danger">Удалить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# Django Messages Framework - если используете #}
+    {% if messages %}
+        <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
+            {% for message in messages %}
+                <div class="toast align-items-center text-white
+
+
+
+                        {% if message.tags %}{% if message.tags == 'error' %}bg-danger{% elif message.tags == 'success' %}bg-success{% else %}bg-primary{% endif %}{% else %}bg-primary{% endif %} border-0 show"
+                     role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="5000">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            {{ message }}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"
+                                aria-label="Close"></button>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
 {% endblock %}
 
 {% block extra_js %}
-    {{ block.super }}
+    <script>
+        // Передаем URL для AJAX загрузки в JavaScript
+        window.UPLOAD_URL = "{% url 'file_storage:upload_file_ajax' %}"; // Убедитесь, что 'upload_file_ajax' - правильное имя URL
+        // Также передадим URL для file_list для перезагрузки на нужную директорию
+        window.CURRENT_LIST_URL = "{% url 'file_storage:list_files' %}{% if current_path_unencoded %}?path={{ current_path_unencoded|urlencode }}{% endif %}";
+    </script>
     <script src="{% static 'js/file_storage.js' %}"></script>
+    <script>
+        // Инициализация всплывающих подсказок Bootstrap (если есть) и Toast
+        document.addEventListener('DOMContentLoaded', function () {
+            var toastElList = [].slice.call(document.querySelectorAll('.toast'))
+            var toastList = toastElList.map(function (toastEl) {
+                // Убедимся, что инициализируем только если еще не инициализирован
+                return bootstrap.Toast.getInstance(toastEl) || new bootstrap.Toast(toastEl)
+            });
+            toastList.forEach(toast => toast.show()); // Показать все сообщения
+        });
+    </script>
 {% endblock %}
