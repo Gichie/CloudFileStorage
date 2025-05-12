@@ -1,3 +1,4 @@
+import urllib
 import uuid
 
 from django.contrib.auth import get_user_model
@@ -7,8 +8,7 @@ User = get_user_model()
 
 
 def user_directory_path(instance, filename):
-    uuid_name = f"{uuid.uuid4()}_{filename}"
-    return f"user_{instance.user.id}/{uuid_name}"
+    return instance.get_full_path()
 
 
 class FileType(models.TextChoices):
@@ -71,5 +71,16 @@ class UserFile(models.Model):
         # Возвращает ключ для объекта-маркера папки в S3 (если используется)
         if self.is_directory():
             # Используем get_full_path() для логического пути папки
-            return f"{self.get_full_path()}.empty_folder_marker" # Убедитесь, что get_full_path() корректен
+            return f"{self.get_full_path()}.empty_folder_marker"  # Убедитесь, что get_full_path() корректен
         return None
+
+    def get_path_for_url(self):
+        if not self.is_directory():  # Файлы не имеют пути для навигации таким образом
+            return ""
+        path_parts = []
+        current = self
+        while current:
+            path_parts.insert(0, current.name)
+            current = current.parent
+
+        return urllib.parse.quote_plus("/".join(path_parts))
