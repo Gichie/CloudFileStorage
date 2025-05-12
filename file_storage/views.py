@@ -49,8 +49,6 @@ class FileListView(LoginRequiredMixin, ListView):
                     raise Http404("Ошибка при поиске директории (найдено несколько объектов).")
 
         if self.current_directory:
-            if not self.current_directory.is_directory():
-                raise Http404("Указанный путь не является диреторией")
             queryset = UserFile.objects.filter(user=user, parent=self.current_directory)
         else:
             queryset = UserFile.objects.filter(user=user, parent=None)
@@ -91,7 +89,6 @@ class FileListView(LoginRequiredMixin, ListView):
         context['parent_level_url'] = parent_level_url
         context['breadcrumbs'] = breadcrumbs
         context['current_folder_id'] = current_folder_id
-        context['upload_form'] = FileUploadForm(user=self.request.user)
 
         return context
 
@@ -167,7 +164,7 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 # todo logging
                 return JsonResponse(
                     data={'error': 'Найдено несколько родительских папок с одинаковым названием'},
-                    status=400,
+                    status=500,
                 )
             except Exception as e:
                 # todo logging
@@ -181,18 +178,34 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
 
         results = []
         for uploaded_file in files:
-            try:
-                result = self._handle_file_upload(uploaded_file, user, parent_object)
-                results.append(result)
-            except Exception as e:
-                # logger.error(
-                #     f"Critical error processing {uploaded_file.name} (user: {user.username}): {e}",
-                #     exc_info=True
-                # )
+            form_data = {'parent': parent_object.pk if parent_object else None}
+            form_files = {'file': uploaded_file}
+            form = FileUploadForm(form_data, form_files, user=user)
+
+            if form.is_valid():
+                try:
+                    result = self._handle_file_upload(uploaded_file, user, parent_object)
+                    results.append(result)
+                except Exception as e:
+                    # logger.error(
+                    #     f"Critical error processing {uploaded_file.name} (user: {user.username}): {e}",
+                    #     exc_info=True
+                    # )
+                    results.append({
+                        'name': uploaded_file.name,
+                        'status': 'error',
+                        'error': 'Внутренняя ошибка сервера при загрузке файла',
+                    })
+            else:
+                error_messages = []
+                for field, errors in form.errors.items():
+                    error_messages.append(f"{field}: {'; '.join(errors)}")
+                error_string = "; ".join(error_messages)
+                # todo logging
                 results.append({
                     'name': uploaded_file.name,
                     'status': 'error',
-                    'error': 'Внутренняя ошибка сервера при загрузке файла',
+                    'error': error_string or 'Ошибка валидации файла.'
                 })
 
         any_errors = any(res['status'] == 'error' for res in results)
