@@ -20,7 +20,7 @@ class FileUploadForm(forms.ModelForm):
 
         self.fields['name'].widget = forms.HiddenInput()
         self.fields['name'].required = False
-
+        self.fields['file'].allow_empty_file = True
         if user:
             self.fields['parent'].queryset = UserFile.objects.filter(
                 user=user,
@@ -71,6 +71,9 @@ class DirectoryCreationForm(forms.ModelForm):
     def clean_name(self):
         name = self.cleaned_data.get('name')
         if INVALID_CHARS_PATTERN.search(name):
-            raise forms.ValidationError("имя папки не может содержать символы: / \\ < > : \" | ? *")
-
+            raise forms.ValidationError("Имя папки не может содержать символы: / \\ < > : \" | ? *")
+        if name == '.':
+            raise forms.ValidationError("Имя папки не может быть '.'")
+        if name.endswith('.') or name.startswith('.'):
+            raise forms.ValidationError("Имя папки не может начинаться или оканчиваться на '.'")
         return name
