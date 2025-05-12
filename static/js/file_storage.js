@@ -1,147 +1,346 @@
 document.addEventListener('DOMContentLoaded', function () {
-    // Твой JS для подтверждения удаления (без изменений)
-    document.querySelectorAll('.delete-confirm-btn').forEach(button => {
-        button.addEventListener('click', function (event) {
-            const formId = this.dataset.formId;
-            const form = document.getElementById(formId);
-            if (form && confirm('{% trans "Вы уверены, что хотите удалить этот элемент?" %}')) {
-                form.submit();
-            }
-        });
-    });
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput'); // Скрытый input[type=file]
 
-    // --- JS для формы загрузки в модальном окне ---
-    const uploadModalElement = document.getElementById('uploadFileModal');
-    if (uploadModalElement) {
-        const uploadForm = document.getElementById('fileUploadModalForm');
-        const fileInput = document.querySelector('input[type="file"][name="file"]');
-        const clickZone = document.getElementById('uploadClickZone');
-        const clickZoneText = document.getElementById('uploadClickZoneText');
+    const selectedFilesListContainer = document.getElementById('selectedFilesList');
+    const selectedFilesUl = selectedFilesListContainer.querySelector('ul.list-group');
+    const uploadActionsDiv = document.getElementById('uploadActions');
+    const startUploadButton = document.getElementById('startUploadButton');
+    const clearSelectionButton = document.getElementById('clearSelectionButton');
 
-        const emptyFileNameInput = uploadForm.querySelector('#emptyFileNameInputModal');
-        const createEmptyFileBtn = uploadForm.querySelector('#createEmptyFileBtnModal');
+    const uploadProgressContainer = document.getElementById('uploadProgressContainer');
+    const uploadProgressBar = document.getElementById('uploadProgressBar');
+    const uploadMessages = document.getElementById('uploadMessages');
 
-        const fullscreenOverlay = document.getElementById('fullscreen-drop-overlay');
-        let bodyDragCounter = 0; // Счетчик для корректной работы dragleave на body
+    let filesToUpload = []; // Массив для хранения выбранных файлов
 
-        function updateUploadUI(files) {
-            if (files && files.length > 0) {
-                clickZoneText.textContent = `Выбран файл: ${files[0].name}`;
-                clickZone.classList.add('file-selected');
-            } else {
-                clickZoneText.textContent = 'Щёлкните здесь или перетащите файл';
-                clickZone.classList.remove('file-selected');
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
             }
         }
+        return cookieValue;
+    }
 
-        fileInput.addEventListener('change', function () {
-            updateUploadUI(this.files);
+    const csrftoken = getCookie('csrftoken');
+
+    // --- Обработчики для выбора файлов ---
+    if (dropZone) {
+        // Клик по зоне или label открывает диалог выбора файлов
+        dropZone.addEventListener('click', () => {
+            if (fileInput) fileInput.click();
         });
 
-        createEmptyFileBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            const emptyContent = new Uint8Array([0]); // Минимальный непустой файл
-            let fileName = emptyFileNameInput.value.trim();
-            if (!fileName) {
-                fileName = `empty_file_${Date.now()}.bin`;
-            } else if (!fileName.includes('.')) {
-                fileName += '.bin'; // Добавляем расширение по умолчанию, если его нет
-            }
-
-            try {
-                const emptyFile = new File([emptyContent], fileName, {
-                    type: "application/octet-stream",
-                    lastModified: Date.now()
-                });
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(emptyFile);
-                fileInput.files = e.dataTransfer.files;
-                updateUploadUI(fileInput.files);
-                emptyFileNameInput.value = ''; // Очищаем поле
-            } catch (error) {
-                console.error("Ошибка при создании пустого файла:", error);
-                // Можно показать сообщение пользователю
-            }
-        });
-
-        // --- Drag and Drop ---
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-
-        // Глобальные обработчики для fullscreen-overlay
-        ['dragenter', 'dragover'].forEach(eventName => {
+        // Drag & Drop события
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                preventDefaults(e);
+            }, false);
+            // Если используем document.body, то для него тоже логируем
             document.body.addEventListener(eventName, (e) => {
                 preventDefaults(e);
-                if (e.dataTransfer.types.includes('Files')) {
-                    fullscreenOverlay.classList.add('visible');
-                }
             }, false);
         });
 
-        // Используем document.body для dragleave, чтобы правильно скрывать оверлей
-        document.body.addEventListener('dragleave', (e) => {
-            // Проверяем, что ушли именно с body или на элемент вне body
-            if (e.target === document.body || e.relatedTarget === null || !document.body.contains(e.relatedTarget)) {
-                bodyDragCounter--;
-                if (bodyDragCounter <= 0) { // <=0 на случай нескольких быстрых enter/leave
-                    fullscreenOverlay.classList.remove('visible');
-                    bodyDragCounter = 0; // Сброс
-                }
-            }
-        }, false);
-
-        document.body.addEventListener('dragenter', (e) => {
-            if (e.dataTransfer.types.includes('Files')) {
-                bodyDragCounter++;
-                fullscreenOverlay.classList.add('visible');
-            }
-        }, false);
-
-
-        fullscreenOverlay.addEventListener('drop', (e) => {
-            preventDefaults(e);
-            fullscreenOverlay.classList.remove('visible');
-            bodyDragCounter = 0;
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                fileInput.files = files;
-                updateUploadUI(files);
-                // Открываем модальное окно, если оно было закрыто
-                const modal = bootstrap.Modal.getInstance(uploadModalElement) || new bootstrap.Modal(uploadModalElement);
-                modal.show();
-            }
-        }, false);
-
-        // Обработчики для clickZone внутри модального окна
         ['dragenter', 'dragover'].forEach(eventName => {
-            clickZone.addEventListener(eventName, (e) => {
-                preventDefaults(e); // Останавливаем всплытие, чтобы body не показал fullscreenOverlay
-                clickZone.classList.add('dragover');
-                // Важно: если мы над clickZone, fullscreenOverlay не должен быть виден
-                fullscreenOverlay.classList.remove('visible');
-                bodyDragCounter = 0; // сбрасываем счетчик body, т.к. мы уже над целевой зоной
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.add('dragover');
             }, false);
         });
 
-        clickZone.addEventListener('dragleave', (e) => {
-            preventDefaults(e);
-            clickZone.classList.remove('dragover');
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.remove('dragover');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            handleDrop(e);
         }, false);
 
-        clickZone.addEventListener('drop', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            fileInput.files = e.dataTransfer.files;
-            updateUploadUI(fileInput.files);
+    }
+
+    if (fileInput) {
+        fileInput.addEventListener('change', handleFileSelect, false);
+    }
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        addFilesToUploadList(files);
+    }
+
+    function handleFileSelect(e) {
+        const files = e.target.files;
+        addFilesToUploadList(files);
+        if (fileInput) fileInput.value = '';
+    }
+
+    function addFilesToUploadList(newFiles) {
+        for (let i = 0; i < newFiles.length; i++) {
+            // Проверка на дубликаты по имени и размеру
+            if (!filesToUpload.some(existingFile => existingFile.name === newFiles[i].name && existingFile.size === newFiles[i].size)) {
+                filesToUpload.push(newFiles[i]);
+            }
+        }
+        renderSelectedFiles();
+        updateUploadControlsVisibility();
+    }
+
+    function renderSelectedFiles() {
+        selectedFilesUl.innerHTML = ''; // Очищаем список
+        if (filesToUpload.length === 0) {
+            selectedFilesListContainer.style.display = 'none';
+            return;
+        }
+
+        filesToUpload.forEach((file, index) => {
+            const li = document.createElement('li');
+            li.classList.add('list-group-item', 'd-flex', 'justify-content-between', 'align-items-center');
+            li.textContent = `${file.name} (${formatBytes(file.size)})`;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.classList.add('btn', 'btn-sm', 'btn-outline-danger');
+            removeBtn.innerHTML = '<i class="bi bi-x"></i>';
+            removeBtn.title = "Удалить из списка";
+            removeBtn.onclick = () => {
+                filesToUpload.splice(index, 1);
+                renderSelectedFiles();
+                updateUploadControlsVisibility();
+            };
+            li.appendChild(removeBtn);
+            selectedFilesUl.appendChild(li);
         });
-        // Очистка формы и UI при закрытии модального окна
-        uploadModalElement.addEventListener('hidden.bs.modal', function () {
-            uploadForm.reset(); // Сбрасывает значения полей формы
-            updateUploadUI(null); // Обновляет UI click-zone
-            // Очистка сообщений об ошибках Django, если они были добавлены динамически (сложнее)
-            // Проще всего, если страница перезагружается после сабмита (что Django и делает при редиректе)
+        selectedFilesListContainer.style.display = 'block';
+    }
+
+    function formatBytes(bytes, decimals = 2) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    }
+
+    function updateUploadControlsVisibility() {
+        if (filesToUpload.length > 0) {
+            uploadActionsDiv.style.display = 'block';
+        } else {
+            uploadActionsDiv.style.display = 'none';
+            selectedFilesListContainer.style.display = 'none'; // Скрыть список, если он пуст
+        }
+    }
+
+    // --- Загрузка файлов ---
+    if (startUploadButton) {
+        startUploadButton.addEventListener('click', () => {
+            if (filesToUpload.length === 0) {
+                uploadMessages.innerHTML = '<p class="text-warning">Нет файлов для загрузки.</p>';
+                return;
+            }
+            uploadFiles(filesToUpload);
+        });
+    }
+
+    if (clearSelectionButton) {
+        clearSelectionButton.addEventListener('click', () => {
+            filesToUpload = [];
+            renderSelectedFiles();
+            updateUploadControlsVisibility();
+            uploadMessages.innerHTML = ''; // Очистить сообщения об ошибках/успехе
+            uploadProgressContainer.style.display = 'none'; // Скрыть прогресс-бар
+        });
+    }
+
+    function uploadFiles(files) {
+        const uploadUrl = window.UPLOAD_URL;
+        if (!uploadUrl) {
+            console.error("Upload URL (window.UPLOAD_URL) is not defined.");
+            uploadMessages.innerHTML = '<p class="text-danger">Ошибка конфигурации: URL для загрузки не определен.</p>';
+            return;
+        }
+
+        const currentFolderId = dropZone.dataset.currentFolderId || null;
+        const formData = new FormData();
+
+        files.forEach(file => {
+            formData.append('files', file, file.name);
+        });
+
+        if (currentFolderId) {
+            formData.append('parent_id', currentFolderId);
+        }
+
+        uploadProgressContainer.style.display = 'block';
+        uploadProgressBar.style.width = '0%';
+        uploadProgressBar.textContent = '0%';
+        uploadProgressBar.setAttribute('aria-valuenow', 0);
+        uploadProgressBar.classList.remove('bg-danger', 'bg-success'); // Сброс классов
+        uploadMessages.innerHTML = ''; // Очистить предыдущие сообщения
+        startUploadButton.disabled = true;
+        clearSelectionButton.disabled = true;
+
+
+        // Использование XMLHttpRequest для отслеживания прогресса
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', uploadUrl, true);
+        xhr.setRequestHeader('X-CSRFToken', csrftoken);
+
+        xhr.upload.onprogress = function (event) {
+            if (event.lengthComputable) {
+                const percentComplete = Math.round((event.loaded / event.total) * 100);
+                uploadProgressBar.style.width = percentComplete + '%';
+                uploadProgressBar.textContent = percentComplete + '%';
+                uploadProgressBar.setAttribute('aria-valuenow', percentComplete);
+            }
+        };
+
+        xhr.onload = function () {
+            startUploadButton.disabled = false;
+            clearSelectionButton.disabled = false;
+
+            let hasErrorsInResults = false; // Флаг для отслеживания ошибок в отдельных файлах
+
+            if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    let messageHtml = '';
+                    if (data.message) {
+                        messageHtml += `<p class="${data.results && data.results.some(r => r.status === 'error') ? 'text-warning' : 'text-success'}">${data.message}</p>`;
+                    }
+
+                    if (data.results && Array.isArray(data.results)) {
+                        messageHtml += '<ul>';
+                        data.results.forEach(result => {
+                            messageHtml += `<li>${result.name}: ${result.status === 'success' ? '<span class="text-success">Успех</span>' : '<span class="text-danger">Ошибка: ' + (result.error || 'Неизвестная ошибка') + '</span>'}</li>`;
+                            if (result.status === 'error') {
+                                hasErrorsInResults = true;
+                            }
+                        });
+                        messageHtml += '</ul>';
+                    } else if (!data.message) {
+                        messageHtml = '<p class="text-success">Загрузка завершена (нет детальной информации).</p>';
+                    }
+                    uploadMessages.innerHTML = messageHtml;
+
+                    if (!hasErrorsInResults && !(data.error)) { // Если нет ошибок ни в общем ответе, ни в отдельных файлах
+                        uploadProgressBar.classList.remove('bg-danger');
+                        uploadProgressBar.classList.add('bg-success');
+                        uploadProgressBar.textContent = 'Успешно!';
+
+                        // Очищаем список файлов к загрузке ТОЛЬКО после полной успешной операции
+                        filesToUpload = [];
+                        renderSelectedFiles();
+                        updateUploadControlsVisibility();
+
+                        // Перезагружаем страницу для отображения новых файлов
+                        setTimeout(() => {
+                            window.location.href = window.CURRENT_LIST_URL || window.location.pathname + window.location.search;
+                        }, 1300); // Даем немного больше времени на просмотр сообщения
+                    } else {
+                        // Были ошибки в data.results или общая ошибка data.error
+                        uploadProgressBar.classList.remove('bg-success');
+                        uploadProgressBar.classList.add('bg-danger');
+                        uploadProgressBar.textContent = 'Ошибка!';
+                        // НЕ перезагружаем страницу и НЕ очищаем список файлов, чтобы пользователь видел ошибки
+                        // и мог попробовать снова (возможно, после исправления чего-либо)
+                    }
+
+                } catch (e) {
+                    console.error('Ошибка парсинга JSON ответа:', e, xhr.responseText);
+                    uploadMessages.innerHTML = `<p class="text-danger">Ошибка обработки ответа сервера. См. консоль.</p>`;
+                    uploadProgressBar.classList.remove('bg-success');
+                    uploadProgressBar.classList.add('bg-danger');
+                    uploadProgressBar.textContent = 'Ошибка!';
+                }
+            } else { // Ошибка HTTP запроса
+                let errorMsg = `Ошибка сервера: ${xhr.status} ${xhr.statusText}`;
+                try {
+                    const errData = JSON.parse(xhr.responseText);
+                    if (errData.error) { // Если бэкенд шлет JSON с полем error
+                        errorMsg = errData.error;
+                    } else if (errData.detail) { // DRF часто использует detail
+                        errorMsg = errData.detail;
+                    } else if (typeof errData === 'string' && errData.length < 200) { // Если просто строка ошибки
+                        errorMsg = errData;
+                    }
+                    // Иначе оставляем исходное сообщение xhr.statusText или добавляем тело ответа, если оно не слишком длинное
+                    else if (xhr.responseText && xhr.responseText.length < 500) {
+                        errorMsg += `<br><small>${xhr.responseText.replace(/</g, "<").replace(/>/g, ">")}</small>`;
+                    }
+
+                } catch (e) { /* Оставляем errorMsg как есть, если ответ не JSON */
+                }
+
+                uploadMessages.innerHTML = `<p class="text-danger">${errorMsg}</p>`;
+                uploadProgressBar.classList.remove('bg-success');
+                uploadProgressBar.classList.add('bg-danger');
+                uploadProgressBar.textContent = 'Ошибка!';
+                // НЕ перезагружаем страницу и НЕ очищаем список файлов
+            }
+        };
+
+        xhr.onerror = function () {
+            startUploadButton.disabled = false;
+            clearSelectionButton.disabled = false;
+            uploadMessages.innerHTML = `<p class="text-danger">Ошибка сети или сервер недоступен.</p>`;
+            uploadProgressBar.classList.add('bg-danger');
+            uploadProgressBar.textContent = 'Ошибка сети';
+        };
+
+        xhr.send(formData);
+    }
+
+    const renameModal = document.getElementById('renameModal');
+    if (renameModal) {
+        renameModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const itemId = button.getAttribute('data-item-id');
+            const itemName = button.getAttribute('data-item-name');
+            const itemType = button.getAttribute('data-item-type');
+
+            const modalTitle = renameModal.querySelector('.modal-title');
+            const itemNameInput = renameModal.querySelector('#newItemName');
+            const itemIdInput = renameModal.querySelector('#renameItemId');
+            const itemTypeInput = renameModal.querySelector('#renameItemType');
+            const itemTypeLabel = renameModal.querySelector('#renameItemTypeLabel');
+
+            modalTitle.textContent = 'Переименовать ' + (itemType === 'folder' ? 'папку' : 'файл');
+            itemNameInput.value = itemName;
+            itemIdInput.value = itemId;
+            if (itemTypeInput) itemTypeInput.value = itemType;
+            if (itemTypeLabel) itemTypeLabel.textContent = (itemType === 'folder' ? 'Текущее имя папки: ' : 'Текущее имя файла: ') + itemName;
+        });
+    }
+
+    const deleteModal = document.getElementById('deleteModal');
+    if (deleteModal) {
+        deleteModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const itemId = button.getAttribute('data-item-id');
+            const itemName = button.getAttribute('data-item-name');
+            const itemType = button.getAttribute('data-item-type');
+
+            const modalBodyName = deleteModal.querySelector('#deleteItemName');
+            const modalBodyType = deleteModal.querySelector('#deleteItemType');
+            const itemIdInput = deleteModal.querySelector('#deleteItemId');
+
+            modalBodyName.textContent = itemName;
+            modalBodyType.textContent = itemType;
+            itemIdInput.value = itemId;
         });
     }
 });
