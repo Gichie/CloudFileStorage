@@ -1,243 +1,33 @@
-/* Базовые стили для прижатия футера к низу */
-html, body {
-    height: 100%;
-}
-
-body {
-    display: flex;
-    flex-direction: column;
-    min-height: 100vh;
-}
-
-main {
-    flex: 1 0 auto;
-}
-
-/* Здесь могут быть другие ваши стили */
-.header-logo {
-    font-weight: 600;
-}
-
-.footer {
-    margin-top: auto;
-}
-
-
-/* --- Стили для кликабельной зоны (теперь это label) --- */
-#click-zone { /* Теперь это ID для label */
-    display: block; /* Чтобы label вел себя как блочный элемент */
-    border: 2px dashed #ccc;
-    border-radius: 10px;
-    padding: 40px; /* Увеличим padding для большей области */
+.drop-zone {
+    border: 2px dashed #007bff; /* Bootstrap primary color */
+    border-radius: 0.25rem;
+    padding: 25px;
     text-align: center;
-    color: #aaa;
+    font-family: Arial, sans-serif;
     cursor: pointer;
-    transition: border-color 0.3s, background-color 0.3s;
-    background-color: #f9f9f9;
+    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
 }
 
-#click-zone:hover {
-    border-color: #999;
+.drop-zone.dragover {
+    background-color: #e9ecef; /* Light gray for hover */
+    border-color: #0056b3; /* Darker primary */
 }
 
-#click-zone.file-selected {
-    border-color: #198754;
-    background-color: #e9f5ff;
-    color: #333;
-}
-
-/* Убираем лишние отступы у параграфа внутри label */
-#click-zone p {
+.drop-zone p {
     margin: 0;
+    color: #6c757d; /* Bootstrap secondary text color */
 }
 
-/* Скрываем стандартный input file */
-#id_file {
-    opacity: 0;
-    position: absolute;
-    z-index: -1;
-    width: 0.1px;
-    height: 0.1px;
-    overflow: hidden;
+.table th, .table td {
+    vertical-align: middle;
 }
 
-/* Стили для полноэкранного оверлея */
-#fullscreen-drop-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 123, 255, 0.7);
-    z-index: 9999;
-    display: none;
-    justify-content: center;
-    align-items: center;
-    text-align: center;
-    pointer-events: none;
+/* Стили для лучшего отображения иконок рядом с текстом */
+.bi {
+    vertical-align: text-bottom; /* Или настройте по вкусу */
 }
 
-#fullscreen-drop-overlay.visible {
-    display: flex;
-    pointer-events: auto;
-}
-
-#fullscreen-drop-overlay p {
-    color: white;
-    font-size: 2em;
-    font-weight: bold;
-    border: 3px dashed white;
-    padding: 30px;
-    border-radius: 15px;
-}
-
-/* Стили для создания пустого файла */
-.empty-file-creator {
-    margin-top: 10px;
-    padding: 8px;
-    border-radius: 4px;
-    background-color: #f8f9fa;
-    border: 1px solid #e9ecef;
-}
-
-.empty-file-creator small {
-    display: block;
-    margin-top: 4px;
-}
-
-.alert-error {
-    --bs-alert-color: #842029;
-    --bs-alert-bg: #f8d7da;
-    --bs-alert-border-color: #f5c2c7;
-}
-
-.file-card-link {
-    text-decoration: none;
-    color: inherit;
-    display: block;
-    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-}
-
-.file-card-link:hover .card {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
-}
-
-.file-card .card-body {
-    text-align: center;
-    padding: 1rem;
-}
-
-.file-card .item-icon {
-    font-size: 3.5rem;
-    margin-bottom: 0.75rem;
-    color: #6c757d;
-}
-
-.file-card .item-icon.folder-icon {
-    color: #ffc107;
-}
-
-.file-card .item-icon.image-icon {
-    color: #198754;
-}
-
-.file-card .item-icon.pdf-icon {
-    color: #dc3545;
-}
-
-.file-card .item-icon.archive-icon {
-    color: #0dcaf0;
-}
-
-.file-card .item-icon.audio-icon {
-    color: #fd7e14;
-}
-
-.file-card .item-icon.video-icon {
-    color: #d63384;
-}
-
-.file-card .card-title {
-    font-size: 0.9rem;
-    font-weight: 500;
-    margin-bottom: 0.25rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    min-height: 2.7em;
-    line-height: 1.35em;
-}
-
-.file-card .card-text-details {
-    font-size: 0.75rem;
-    color: #6c757d;
-    min-height: 1.125em;
-}
-
-.file-card .actions-dropdown .dropdown-toggle::after {
-    display: none;
-}
-
-.file-card .actions-dropdown {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: 10;
-}
-
-/* Стили для зоны загрузки и оверлея (из твоего upload_file.html) */
-#uploadClickZone { /* Изменил ID, чтобы был уникальным, если click-zone используется где-то еще */
-    border: 2px dashed #ccc;
-    padding: 20px;
-    text-align: center;
-    cursor: pointer;
-    background-color: #f9f9f9;
-    border-radius: 5px;
-    transition: border-color 0.3s, background-color 0.3s;
-}
-
-#uploadClickZone.file-selected {
-    border-color: #28a745; /* Зеленый при выборе файла */
-    background-color: #e9f7ef;
-}
-
-#uploadClickZone.dragover {
-    border-color: #007bff; /* Синий при наведении файла для drag-n-drop */
-    background-color: #e7f3ff;
-}
-
-#uploadClickZone p {
-    margin-bottom: 0;
-}
-
-
-input[type="file"] {
-    opacity: 0;
-    position: absolute;
-    left: 0; top: 0;
-    width: 100%; height: 100%;
-    z-index: -1;
-}
-
-#fullscreen-drop-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 123, 255, 0.7);
-    z-index: 1056; /* Выше чем модальное окно Bootstrap (1050-1055) */
-    display: none; /* Скрыт по умолчанию */
-    justify-content: center;
-    align-items: center;
-    text-align: center;
-    color: white;
-    font-size: 2em;
-}
-
-#fullscreen-drop-overlay.visible {
-    display: flex;
+/* Toast messages fix for potential overflow */
+.toast-body {
+    word-break: break-word;
 }
