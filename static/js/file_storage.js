@@ -43,7 +43,6 @@ document.addEventListener('DOMContentLoaded', function () {
             dropZone.addEventListener(eventName, (e) => {
                 preventDefaults(e);
             }, false);
-            // Если используем document.body, то для него тоже логируем
             document.body.addEventListener(eventName, (e) => {
                 preventDefaults(e);
             }, false);
@@ -192,7 +191,6 @@ document.addEventListener('DOMContentLoaded', function () {
         uploadMessages.innerHTML = ''; // Очистить предыдущие сообщения
         startUploadButton.disabled = true;
         clearSelectionButton.disabled = true;
-
 
         // Использование XMLHttpRequest для отслеживания прогресса
         const xhr = new XMLHttpRequest();
