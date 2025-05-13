@@ -5,10 +5,10 @@ from file_storage.models import UserFile
 
 class StorageSuccessUrlMixin:
     """Миксин для формирования URL перенаправления после успешных операций с файлами и папками"""
-
     def get_success_url(self):
-        if self.object and self.object.parent:
-            return f"{reverse_lazy('file_storage:list_files')}?folder={self.object.parent.id}"
+        parent = self.object.parent
+        if parent:
+            return f"{reverse_lazy('file_storage:list_files')}?path={parent.get_path_for_url()}"
         return reverse_lazy('file_storage:list_files')
 
 
