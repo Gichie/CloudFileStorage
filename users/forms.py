@@ -6,11 +6,11 @@ from django.contrib.auth.forms import AuthenticationForm
 class LoginUserForm(AuthenticationForm):
     username = forms.CharField(
         label='Имя пользователя / E-mail',
-        widget=forms.TextInput(attrs={'class': 'form-input'})
+        widget=forms.TextInput(attrs={'class': 'form-control'})
     )
     password = forms.CharField(
         label='Пароль',
-        widget=forms.PasswordInput(attrs={'class': 'form-input'})
+        widget=forms.PasswordInput(attrs={'class': 'form-control'})
     )
 
 
@@ -21,21 +21,21 @@ class RegistrationForm(forms.ModelForm):
     username = forms.CharField(
         min_length=2,
         label='Имя пользователя',
-        widget=forms.TextInput(attrs={'class': 'form-input'})
+        widget=forms.TextInput(attrs={'class': 'form-control'})
     )
     password = forms.CharField(
         min_length=2,
         label='Пароль',
-        widget=forms.PasswordInput(attrs={'class': 'form-input'})
+        widget=forms.PasswordInput(attrs={'class': 'form-control'})
     )
     password2 = forms.CharField(
         label='Подтвердите пароль',
-        widget=forms.PasswordInput(attrs={'class': 'form-input'})
+        widget=forms.PasswordInput(attrs={'class': 'form-control'})
     )
     email = forms.EmailField(
         label='E-mail',
         required=False,
-        widget=forms.EmailInput(attrs={'placeholder': 'Необязательно', 'class': 'form-input'})
+        widget=forms.EmailInput(attrs={'placeholder': 'Необязательно', 'class': 'form-control'})
     )
 
     class Meta:
