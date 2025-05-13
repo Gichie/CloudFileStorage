@@ -94,7 +94,6 @@ class FileListView(LoginRequiredMixin, ListView):
 
 
 class FileUploadAjaxView(LoginRequiredMixin, View):
-
     def _handle_file_upload(self, uploaded_file, user, parent_object):
         """
         Обрабатывает один загруженный файл: проверяет, создает UserFile, загружает файл в Minio через FileField.
@@ -237,6 +236,25 @@ class DirectoryCreateView(
         form.instance.user = self.request.user
         form.instance.object_type = FileType.DIRECTORY
 
+        raw_parent_pk = self.request.POST.get('parent')
+        parent_object = None
+
+        if raw_parent_pk:
+            try:
+                parent_object = UserFile.objects.get(
+                    pk=raw_parent_pk,
+                    user=self.request.user,
+                    object_type=FileType.DIRECTORY,
+                )
+            except UserFile.DoesNotExist:
+                form.add_error(None, "Родительская папка не найдена или не является директорией.")
+                return self.form_invalid(form)
+            except (ValueError, TypeError):
+                form.add_error(None, "Некорректный идентификатор родительской папки.")
+                return self.form_invalid(form)
+
+        form.instance.parent = parent_object
+
         try:
             with transaction.atomic():
                 response = super().form_valid(form)
@@ -251,9 +269,11 @@ class DirectoryCreateView(
 
                 messages.success(self.request, "Папка успешно создана")
                 return response
+
         except Exception as e:
             # logger
-            messages.error(self.request, f"Ошибка при создании папки: {str(e)}")
+            messages.error(self.request, "Внутренняя ошибка при создании папки. Попробуйте позже")
+            form.add_error(None, f"Внутренняя ошибка сервера {str(e)}")
             return self.form_invalid(form)
 
 
