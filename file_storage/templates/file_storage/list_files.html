@@ -160,9 +160,8 @@
         <div class="modal-dialog">
             <div class="modal-content">
                 <form method="post" action="{% url 'file_storage:create_folder' %}">
-                    {# Замените 'create_folder' на ваш URL #}
                     {% csrf_token %}
-                    <input type="hidden" name="parent_id" value="{{ current_folder_id|default_if_none:'' }}">
+                    <input type="hidden" name="parent" value="{{ current_folder_id|default_if_none:'' }}">
                     <div class="modal-header">
                         <h5 class="modal-title" id="createFolderModalLabel">Создать новую папку</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
