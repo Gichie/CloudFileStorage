@@ -3,7 +3,7 @@ import re
 
 from django import forms
 
-from file_storage.models import UserFile
+from file_storage.models import UserFile, FileType
 
 INVALID_CHARS_PATTERN = re.compile(r'[\/\\<>:"|?*]')
 
@@ -43,6 +43,12 @@ class FileUploadForm(forms.ModelForm):
 
 
 class DirectoryCreationForm(forms.ModelForm):
+    parent = forms.ModelChoiceField(
+        queryset=UserFile.objects,
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
     class Meta:
         model = UserFile
         fields = ['name', 'parent']
@@ -50,23 +56,18 @@ class DirectoryCreationForm(forms.ModelForm):
         widgets = {
             'name': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'Введите название папки'
-            }),
-            'parent': forms.Select(attrs={
-                'class': 'form-control'
             }),
         }
 
     def __init__(self, *args, **kwargs):
-        user = kwargs.pop('user', None)
+        self.user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
 
-        if user:
+        if self.user:
             self.fields['parent'].queryset = UserFile.objects.filter(
-                user=user, object_type='directory'
+                user=self.user, object_type=FileType.DIRECTORY
             )
-            self.fields['parent'].required = False
-            self.fields['parent'].empty_label = "Корневая директория"
+            self.fields['name'].required = True
 
     def clean_name(self):
         name = self.cleaned_data.get('name')
@@ -77,3 +78,4 @@ class DirectoryCreationForm(forms.ModelForm):
         if name.endswith('.') or name.startswith('.'):
             raise forms.ValidationError("Имя папки не может начинаться или оканчиваться на '.'")
         return name
+
