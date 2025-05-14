@@ -6,6 +6,46 @@ from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+LOGGING_DIR = BASE_DIR / 'logs'
+LOGGING_DIR.mkdir(parents=True, exist_ok=True)
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} [{module} {lineno:d}] {message}',
+            'style': '{'
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGGING_DIR / 'logs.log',
+            'maxBytes': 5 * 1024 * 1024,
+            'backupCount': 2,
+            'encoding': 'utf-8',
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        '': {  # Пустая строка означает корневой логгер
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+        },
+        'django': {
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': False
+        },
+    },
+}
+
 load_dotenv()
 
 # SECURITY WARNING: keep the secret key used in production secret!
