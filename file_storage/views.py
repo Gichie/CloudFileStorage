@@ -1,10 +1,12 @@
+import logging
 import urllib
 
+from botocore.exceptions import NoCredentialsError, BotoCoreError, ClientError
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.http import Http404, JsonResponse
-from django.urls import reverse_lazy, reverse
+from django.urls import reverse
 from django.views import View
 from django.views.generic import CreateView, ListView
 
@@ -13,6 +15,8 @@ from file_storage.forms import FileUploadForm, DirectoryCreationForm
 from file_storage.mixins import StorageSuccessUrlMixin, UserFormKwargsMixin, ParentInitialMixin
 from file_storage.models import UserFile, FileType
 from file_storage.utils.minio import get_s3_client, create_empty_directory_marker
+
+logger = logging.getLogger(__name__)
 
 
 class FileListView(LoginRequiredMixin, ListView):
@@ -25,6 +29,11 @@ class FileListView(LoginRequiredMixin, ListView):
         path_param_encoded = self.request.GET.get('path')
         self.current_directory = None
         self.current_path_unencoded = ""
+
+        logger.info(
+            f"User '{user.username}' ID: {user.id} requested file list. "
+            f"Raw path_param: '{path_param_encoded}'"
+        )
 
         if path_param_encoded:
             unquoted_path = urllib.parse.unquote_plus(path_param_encoded)
@@ -44,14 +53,26 @@ class FileListView(LoginRequiredMixin, ListView):
                         current_parent_obj = obj
                     self.current_directory = current_parent_obj
                 except UserFile.DoesNotExist:
+                    logger.error(
+                        f"User '{user.username}': Directory not found for path component '{name_part}' "
+                        f"Full requested path: '{self.current_path_unencoded}'. Raising Http404."
+                    )
                     raise Http404("Запрошенная директория не найдена или не является директорией.")
                 except UserFile.MultipleObjectsReturned:
+                    logger.error(
+                        f"User '{user.username}': Multiple objects returned for path component '{name_part}' "
+                        f"Full requested path: '{self.current_path_unencoded}'. This indicates a data integrity issue. Raising Http404."
+                    )
                     raise Http404("Ошибка при поиске директории (найдено несколько объектов).")
 
         if self.current_directory:
             queryset = UserFile.objects.filter(user=user, parent=self.current_directory)
+            logger.info(f"User '{user.username}': Successfully resolved path '{self.current_path_unencoded}'")
         else:
             queryset = UserFile.objects.filter(user=user, parent=None)
+            logger.info(
+                f"User '{user.username}': Listing root directory contents (no specific path or path resolved to root)."
+            )
 
         return queryset.order_by('object_type', 'name')
 
@@ -68,14 +89,12 @@ class FileListView(LoginRequiredMixin, ListView):
             path_parts_for_breadcrumbs_url = self.current_path_unencoded.split('/')
 
             while temp_dir:
-
                 breadcrumbs.insert(0, {
                     'name': temp_dir.name,
                     'url_path_encoded': urllib.parse.quote_plus('/'.join(path_parts_for_breadcrumbs_url))
                 })
                 path_parts_for_breadcrumbs_url.pop()
                 temp_dir = temp_dir.parent
-
 
             # Формирование URl для кнопки "Назад"
             if self.current_directory.parent:
@@ -102,12 +121,15 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
 
         uploaded_file_name = uploaded_file.name
 
+        log_prefix = (f"User '{user.username}' (ID: {user.id}), File '{uploaded_file_name}', "
+                      f"Parent ID: {parent_object.id if parent_object else 'None'}:")
+
         if UserFile.objects.filter(
                 user=user,
                 parent=parent_object,
                 name=uploaded_file_name
         ).exists():
-            # todo logging
+            logger.warning(f"{log_prefix} Upload failed. File with this name already exists.")
             return {
                 'name': uploaded_file_name,
                 'status': 'error',
@@ -124,7 +146,11 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                     object_type=FileType.FILE,
                 )
                 user_file_instance.save()
-                # todo logging
+
+                logger.info(
+                    f"{log_prefix} Successfully uploaded and saved. "
+                    f"UserFile ID: {user_file_instance.id}, Minio Path: {user_file_instance.file.name}"
+                )
 
                 return {
                     'name': user_file_instance.name,
@@ -133,7 +159,10 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 }
 
         except Exception as e:
-            # todo logging
+            logger.error(
+                f"{log_prefix} Error during file save or Minio upload: {e}",
+                exc_info=True  # Добавляет traceback в лог
+            )
             return {
                 'name': uploaded_file_name,
                 'status': 'error',
@@ -146,6 +175,11 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
         user = request.user
         parent_object = None
 
+        logger.info(
+            f"{self.__class__.__name__}: User '{user.username}' ID: {user.id} initiated file upload. "
+            f"Number of files: {len(files)}. Target parent_id: '{parent_id}'."
+        )
+
         if parent_id:
             try:
                 parent_object = UserFile.objects.get(
@@ -154,25 +188,33 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                     object_type=FileType.DIRECTORY
                 )
             except UserFile.DoesNotExist:
-                # todo logging
+                logger.warning(
+                    f"User '{user.username}': Attempted to upload to non-existent or unauthorized parent directory ID '{parent_id}'."
+                )
                 return JsonResponse(
                     data={'error': 'Родительская папка не найдена или не является директорией.'},
                     status=400,
                 )
             except UserFile.MultipleObjectsReturned:
-                # todo logging
+                logger.error(
+                    f"User '{user.username}': Multiple parent directories found for ID '{parent_id}'. Data integrity issue."
+                )
                 return JsonResponse(
                     data={'error': 'Найдено несколько родительских папок с одинаковым названием'},
                     status=500,
                 )
             except Exception as e:
-                # todo logging
+                logger.error(
+                    f"User '{user.username}': Unexpected error finding parent directory ID '{parent_id}': {e}.",
+                    exc_info=True
+                )
                 return JsonResponse(
                     data={'error': 'Ошибка на стороне сервера'},
                     status=500,
                 )
 
         if not files:
+            logger.warning(f"User '{user.username}': File upload request received without files.")
             return JsonResponse({'error': 'Файлы не педоставлены'}, status=400)
 
         results = []
@@ -186,10 +228,10 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                     result = self._handle_file_upload(uploaded_file, user, parent_object)
                     results.append(result)
                 except Exception as e:
-                    # logger.error(
-                    #     f"Critical error processing {uploaded_file.name} (user: {user.username}): {e}",
-                    #     exc_info=True
-                    # )
+                    logger.critical(
+                        f"User '{user.username}': Critical unhandled error in _handle_file_upload for file '{uploaded_file.name}': {e}",
+                        exc_info=True
+                    )
                     results.append({
                         'name': uploaded_file.name,
                         'status': 'error',
@@ -200,7 +242,9 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 for field, errors in form.errors.items():
                     error_messages.append(f"{field}: {'; '.join(errors)}")
                 error_string = "; ".join(error_messages)
-                # todo logging
+                logger.warning(
+                    f"User '{user.username}': File '{uploaded_file.name}' failed validation. Errors: {error_string}"
+                )
                 results.append({
                     'name': uploaded_file.name,
                     'status': 'error',
@@ -239,6 +283,12 @@ class DirectoryCreateView(
         raw_parent_pk = self.request.POST.get('parent')
         parent_object = None
 
+        logger.info(
+            f"{self.__class__.__name__}: User: '{form.instance.user.username}' ID: {self.request.user.id} "
+            f"initiates creation of {form.instance.object_type}. "
+            f"raw_parent_pk: {raw_parent_pk}"
+        )
+
         if raw_parent_pk:
             try:
                 parent_object = UserFile.objects.get(
@@ -246,10 +296,24 @@ class DirectoryCreateView(
                     user=self.request.user,
                     object_type=FileType.DIRECTORY,
                 )
+                logger.info(
+                    f"[{self.__class__.__name__}] User '{self.request.user.username}' "
+                    f"successfully identified parent directory: '{parent_object.name}' (ID: {parent_object.id}) "
+                    f"for new directory creation."
+                )
             except UserFile.DoesNotExist:
+                logger.warning(
+                    f"Parent directory not found. pk={raw_parent_pk} user={self.request.user.username} ID: {self.request.user.id} "
+                    f"Requested parent_pk: '{raw_parent_pk}'. Query was for object_type: {FileType.DIRECTORY}"
+                )
                 form.add_error(None, "Родительская папка не найдена или не является директорией.")
                 return self.form_invalid(form)
             except (ValueError, TypeError):
+                logger.error(
+                    f"User={self.request.user.username} ID: {self.request.user.id} "
+                    f"object_type={FileType.DIRECTORY} Invalid parent folder identifier. pk={raw_parent_pk}",
+                    exc_info=True
+                )
                 form.add_error(None, "Некорректный идентификатор родительской папки.")
                 return self.form_invalid(form)
 
@@ -266,14 +330,49 @@ class DirectoryCreateView(
                     settings.AWS_STORAGE_BUCKET_NAME,
                     key
                 )
-
+                logger.info(f"Directory successfully created in DB and S3. Path={key}, DB ID={form.instance.pk}")
                 messages.success(self.request, "Папка успешно создана")
                 return response
 
+        except IntegrityError as e:
+            logger.error(f"Database integrity error during folder creation: {e}", exc_info=True)
+            form.add_error(None,
+                           "Ошибка базы данных: Не удалось создать папку из-за конфликта данных.")
+            return self.form_invalid(form)
+
+        except NoCredentialsError:
+            logger.critical("S3/Minio credentials not found. Cannot create directory marker.", exc_info=True)
+            messages.error(
+                self.request,
+                "Ошибка конфигурации сервера: Не удалось подключиться к хранилищу файлов."
+            )
+            return self.form_invalid(form)
+
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code")
+            logger.error(f"S3 ClientError while creating directory marker '{key}': {e} (Code: {error_code})",
+                         exc_info=True)
+            messages.error(self.request,
+                           f"Ошибка хранилища. Не удалось создать папку в облаке.")
+            return self.form_invalid(form)
+
+        except BotoCoreError as e:
+            logger.error(f"BotoCoreError while creating directory marker '{key}': {e}", exc_info=True)
+            messages.error(
+                self.request, "Произошла ошибка при взаимодействии с файловым хранилищем. Попробуйте позже."
+            )
+            return self.form_invalid(form)
+
+        except AttributeError as e:
+            logger.error(
+                f"AttributeError, possibly related to form.instance or S3 key generation: {e}", exc_info=True
+            )
+            messages.error(self.request, "Внутренняя ошибка сервера при подготовке данных для хранилища.")
+            return self.form_invalid(form)
+
         except Exception as e:
-            # logger
-            messages.error(self.request, "Внутренняя ошибка при создании папки. Попробуйте позже")
-            form.add_error(None, f"Внутренняя ошибка сервера {str(e)}")
+            logger.critical(f"Unexpected error during folder creation (S3 part): {e}", exc_info=True)
+            messages.error(self.request, "Произошла непредвиденная ошибка при создании папки.")
             return self.form_invalid(form)
 
 
