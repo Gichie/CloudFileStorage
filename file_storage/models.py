@@ -53,14 +53,6 @@ class UserFile(models.Model):
 
         super().save(*args, **kwargs)
 
-    def delete(self, *args, **kwargs):
-        try:
-            self.file.delete(save=False)
-        except Exception as e:
-            # todo logging
-            print(f"Error deleting file {self.file.name} from storage: {e}")
-        super().delete(*args, **kwargs)
-
     def get_s3_key_for_file_content(self):
         # Возвращает ключ, по которому FileField хранит содержимое файла
         if not self.is_directory() and self.file:
