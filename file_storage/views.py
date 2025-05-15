@@ -1,18 +1,17 @@
+import json
 import logging
 import urllib
 
 from botocore.exceptions import NoCredentialsError, BotoCoreError, ClientError
-from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction, IntegrityError
 from django.http import Http404, JsonResponse
 from django.urls import reverse
 from django.views import View
-from django.views.generic import CreateView, ListView
+from django.views.generic import ListView
 
 from cloud_file_storage import settings
 from file_storage.forms import FileUploadForm, DirectoryCreationForm
-from file_storage.mixins import StorageSuccessUrlMixin, UserFormKwargsMixin, ParentInitialMixin
 from file_storage.models import UserFile, FileType
 from file_storage.utils.minio import get_s3_client, create_empty_directory_marker
 
@@ -109,7 +108,153 @@ class FileListView(LoginRequiredMixin, ListView):
         context['breadcrumbs'] = breadcrumbs
         context['current_folder_id'] = current_folder_id
 
+        if 'form_create_folder' not in context:
+            context['form_create_folder'] = DirectoryCreationForm(user=self.request.user)
+
         return context
+
+    def post(self, request, *args, **kwargs):
+        form = DirectoryCreationForm(request.POST, user=request.user)
+        if form.is_valid():
+            parent_pk = request.POST.get('parent')
+            parent_object = None
+
+            if parent_pk:
+                try:
+                    parent_object = UserFile.objects.get(
+                        pk=parent_pk,
+                        user=self.request.user,
+                        object_type=FileType.DIRECTORY,
+                    )
+
+                    logger.info(
+                        f"[{self.__class__.__name__}] User '{self.request.user.username}' "
+                        f"successfully identified parent directory: '{parent_object.name}' (ID: {parent_object.id}) "
+                        f"for new directory creation."
+                    )
+
+                except UserFile.DoesNotExist:
+                    logger.warning(
+                        f"Parent directory not found. pk={parent_pk} user={self.request.user.username} ID: {self.request.user.id} "
+                        f"Requested parent_pk: '{parent_pk}'. Query was for object_type: {FileType.DIRECTORY}"
+                    )
+                    return JsonResponse(
+                        {'status': 'error', 'message': 'Родительская папка не найдена'},
+                        status=400,
+                    )
+
+                except (ValueError, TypeError):
+                    logger.error(
+                        f"User={self.request.user.username} ID: {self.request.user.id} "
+                        f"object_type={FileType.DIRECTORY} Invalid parent folder identifier. pk={parent_pk}",
+                        exc_info=True
+                    )
+                    return JsonResponse(
+                        {'status': 'error', 'message': 'Некорректный идентификатор родительской папки.'},
+                        status=400
+                    )
+
+            directory_name = form.cleaned_data['name']
+            if UserFile.objects.filter(
+                    user=request.user,
+                    name=directory_name,
+                    parent=parent_object,
+                    object_type=FileType.DIRECTORY
+            ).exists():
+                logger.warning(
+                    f"User {request.user.username}: Directory: {directory_name} "
+                    f"already exists in parent '{parent_object.name if parent_object else 'root'}'."
+                )
+                return JsonResponse({
+                    'status': 'error',
+                    'message': f"Папка с именем '{directory_name}' уже существует в текущей директории."
+                }, status=400)
+
+            new_directory = form.save(commit=False)
+            new_directory.user = self.request.user
+            new_directory.object_type = FileType.DIRECTORY
+            new_directory.parent = parent_object
+
+            try:
+                with transaction.atomic():
+                    new_directory.save()
+                    s3_client = get_s3_client()
+                    key = new_directory.get_s3_key_for_directory_marker()
+                    create_empty_directory_marker(
+                        s3_client,
+                        settings.AWS_STORAGE_BUCKET_NAME,
+                        key
+                    )
+
+                    logger.info(
+                        f"User {self.request.user.username} Directory successfully created in DB and S3. "
+                        f"Path={key}, DB ID={new_directory.id}"
+                    )
+
+                    return JsonResponse({
+                        'status': 'success',
+                        'message': 'Папка успешно создана!',
+                        'directory': {
+                            'id': new_directory.id,
+                            'name': new_directory.name,
+                            'type': FileType.DIRECTORY.value,
+                            'icon_class': 'bi-folder-fill',
+                        }
+                    })
+
+            except IntegrityError as e:
+                logger.error(f"Database integrity error during folder creation: {e}", exc_info=True)
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Ошибка базы данных: Не удалось создать папку из-за конфликта данных.'
+                }, status=409)
+
+            except NoCredentialsError:
+                logger.critical("S3/Minio credentials not found. Cannot create directory marker.", exc_info=True)
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Ошибка конфигурации сервера: Не удалось подключиться к хранилищу файлов.'
+                }, status=500)
+
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code")
+                logger.error(f"S3 ClientError while creating directory marker '{key}': {e} (Code: {error_code})",
+                             exc_info=True)
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Ошибка хранилища. Не удалось создать папку в облаке.'
+                }, status=500)
+
+            except BotoCoreError as e:
+                logger.error(f"BotoCoreError while creating directory marker '{key}': {e}", exc_info=True)
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Произошла ошибка при взаимодействии с файловым хранилищем. Попробуйте позже.'
+                }, status=503)
+
+            except AttributeError as e:
+                logger.error(
+                    f"AttributeError, possibly related to form.instance or S3 key generation: {e}", exc_info=True
+                )
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Внутренняя ошибка сервера при подготовке данных для хранилища.'
+                }, status=500)
+
+            except Exception as e:
+                logger.critical(f"Unexpected error during folder creation (S3 part): {e}", exc_info=True)
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Произошла непредвиденная ошибка при создании папки.'
+                }, status=500)
+        else:
+            logger.warning(
+                f"User '{self.request.user.username}': Form validation failed. Errors: {json.dumps(form.errors.get_json_data(escape_html=False), ensure_ascii=False)}"
+            )
+            return JsonResponse(
+                {'status': 'error', 'message': f'{form.errors["name"][0]}', 'errors': form.errors.as_json()},
+                status=400
+            )
 
 
 class FileUploadAjaxView(LoginRequiredMixin, View):
@@ -129,7 +274,7 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 parent=parent_object,
                 name=uploaded_file_name
         ).exists():
-            logger.warning(f"{log_prefix} Upload failed. File with this name already exists.")
+            logger.warning(f"Upload failed. File with this name already exists. {log_prefix}")
             return {
                 'name': uploaded_file_name,
                 'status': 'error',
@@ -266,114 +411,6 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
             http_status = 207
 
         return JsonResponse({'message': message, 'results': results}, status=http_status)
-
-
-class DirectoryCreateView(
-    LoginRequiredMixin, StorageSuccessUrlMixin,
-    UserFormKwargsMixin, CreateView, ParentInitialMixin
-):
-    model = UserFile
-    form_class = DirectoryCreationForm
-    template_name = 'file_storage/create_directory.html'
-
-    def form_valid(self, form):
-        form.instance.user = self.request.user
-        form.instance.object_type = FileType.DIRECTORY
-
-        raw_parent_pk = self.request.POST.get('parent')
-        parent_object = None
-
-        logger.info(
-            f"{self.__class__.__name__}: User: '{form.instance.user.username}' ID: {self.request.user.id} "
-            f"initiates creation of {form.instance.object_type}. "
-            f"raw_parent_pk: {raw_parent_pk}"
-        )
-
-        if raw_parent_pk:
-            try:
-                parent_object = UserFile.objects.get(
-                    pk=raw_parent_pk,
-                    user=self.request.user,
-                    object_type=FileType.DIRECTORY,
-                )
-                logger.info(
-                    f"[{self.__class__.__name__}] User '{self.request.user.username}' "
-                    f"successfully identified parent directory: '{parent_object.name}' (ID: {parent_object.id}) "
-                    f"for new directory creation."
-                )
-            except UserFile.DoesNotExist:
-                logger.warning(
-                    f"Parent directory not found. pk={raw_parent_pk} user={self.request.user.username} ID: {self.request.user.id} "
-                    f"Requested parent_pk: '{raw_parent_pk}'. Query was for object_type: {FileType.DIRECTORY}"
-                )
-                form.add_error(None, "Родительская папка не найдена или не является директорией.")
-                return self.form_invalid(form)
-            except (ValueError, TypeError):
-                logger.error(
-                    f"User={self.request.user.username} ID: {self.request.user.id} "
-                    f"object_type={FileType.DIRECTORY} Invalid parent folder identifier. pk={raw_parent_pk}",
-                    exc_info=True
-                )
-                form.add_error(None, "Некорректный идентификатор родительской папки.")
-                return self.form_invalid(form)
-
-        form.instance.parent = parent_object
-
-        try:
-            with transaction.atomic():
-                response = super().form_valid(form)
-
-                s3_client = get_s3_client()
-                key = form.instance.get_s3_key_for_directory_marker()
-                create_empty_directory_marker(
-                    s3_client,
-                    settings.AWS_STORAGE_BUCKET_NAME,
-                    key
-                )
-                logger.info(f"Directory successfully created in DB and S3. Path={key}, DB ID={form.instance.pk}")
-                messages.success(self.request, "Папка успешно создана")
-                return response
-
-        except IntegrityError as e:
-            logger.error(f"Database integrity error during folder creation: {e}", exc_info=True)
-            form.add_error(None,
-                           "Ошибка базы данных: Не удалось создать папку из-за конфликта данных.")
-            return self.form_invalid(form)
-
-        except NoCredentialsError:
-            logger.critical("S3/Minio credentials not found. Cannot create directory marker.", exc_info=True)
-            messages.error(
-                self.request,
-                "Ошибка конфигурации сервера: Не удалось подключиться к хранилищу файлов."
-            )
-            return self.form_invalid(form)
-
-        except ClientError as e:
-            error_code = e.response.get("Error", {}).get("Code")
-            logger.error(f"S3 ClientError while creating directory marker '{key}': {e} (Code: {error_code})",
-                         exc_info=True)
-            messages.error(self.request,
-                           f"Ошибка хранилища. Не удалось создать папку в облаке.")
-            return self.form_invalid(form)
-
-        except BotoCoreError as e:
-            logger.error(f"BotoCoreError while creating directory marker '{key}': {e}", exc_info=True)
-            messages.error(
-                self.request, "Произошла ошибка при взаимодействии с файловым хранилищем. Попробуйте позже."
-            )
-            return self.form_invalid(form)
-
-        except AttributeError as e:
-            logger.error(
-                f"AttributeError, possibly related to form.instance or S3 key generation: {e}", exc_info=True
-            )
-            messages.error(self.request, "Внутренняя ошибка сервера при подготовке данных для хранилища.")
-            return self.form_invalid(form)
-
-        except Exception as e:
-            logger.critical(f"Unexpected error during folder creation (S3 part): {e}", exc_info=True)
-            messages.error(self.request, "Произошла непредвиденная ошибка при создании папки.")
-            return self.form_invalid(form)
 
 
 class DeleteView(LoginRequiredMixin, ListView):
