@@ -159,23 +159,28 @@
          aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
-                <form method="post" action="{% url 'file_storage:create_folder' %}">
+                <form id="createFolderForm" data-post-url="{% url 'file_storage:list_files' %}">
                     {% csrf_token %}
-                    <input type="hidden" name="parent" value="{{ current_folder_id|default_if_none:'' }}">
+                    <input type="hidden" name="parent" id="createFolderParentIdInput"
+                           value="{{ current_folder_id|default_if_none:'' }}">
                     <div class="modal-header">
                         <h5 class="modal-title" id="createFolderModalLabel">Создать новую папку</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
-                        <div class="mb-3">
-                            <label for="folderName" class="form-label">Имя папки</label>
-                            <input type="text" class="form-name form-control" id="folderName" name="name" required>
+                        <!-- Место для отображения общих ошибок формы -->
+                        <div id="createFolderFormAlerts" class="alert alert-danger" style="display: none;" role="alert">
                         </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                        <button type="submit" class="btn btn-primary">Создать</button>
-                    </div>
+                        <div class="mb-3">
+                            <label for="folderNameInput" class="form-label">Имя папки</label>
+                            <input type="text" class="form-control" id="folderNameInput" name="name" required>
+                            <!-- Место для отображения ошибок валидации поля "name" -->
+                            <div id="folderNameError" class="invalid-feedback" style="display: none;"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                            <button type="button" id="submitCreateFolderBtn" class="btn btn-primary">Создать</button>
+                        </div>
                 </form>
             </div>
         </div>
@@ -240,10 +245,18 @@
         <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
             {% for message in messages %}
                 <div class="toast align-items-center text-white
-
-
-
-                        {% if message.tags %}{% if message.tags == 'error' %}bg-danger{% elif message.tags == 'success' %}bg-success{% else %}bg-primary{% endif %}{% else %}bg-primary{% endif %} border-0 show"
+                        {% if message.tags %}
+                            {% if message.tags == 'error' %}
+                                bg-danger
+                            {% elif message.tags == 'success' %}
+                                bg-success
+                            {% else %}
+                                bg-primary
+                            {% endif %}
+                        {% else %}
+                            bg-primary
+                        {% endif %}
+                        border-0 show"
                      role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="5000">
                     <div class="d-flex">
                         <div class="toast-body">
@@ -278,4 +291,5 @@
             toastList.forEach(toast => toast.show()); // Показать все сообщения
         });
     </script>
+    <script src="{% static 'js/create_directory.js' %}"></script>
 {% endblock %}
