@@ -78,4 +78,3 @@ class DirectoryCreationForm(forms.ModelForm):
         if name.endswith('.') or name.startswith('.'):
             raise forms.ValidationError("Имя папки не может начинаться или оканчиваться на '.'")
         return name
-
