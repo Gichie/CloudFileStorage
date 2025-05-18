@@ -26,6 +26,12 @@
             </ol>
         </nav>
 
+        {% if current_folder_id %}
+            <input type="hidden" id="current_folder_id_holder" value="{{ current_folder_id }}">
+        {% else %}
+            <input type="hidden" id="current_folder_id_holder" value=""> <!-- Для корневой директории -->
+        {% endif %}
+
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h2>
                 {% if current_directory %}
@@ -34,11 +40,16 @@
                     Корневая директория
                 {% endif %}
             </h2>
-            <div>
-                <button type="button" class="btn btn-success me-2" data-bs-toggle="modal"
+            <div class="me-1">
+                <button type="button" class="btn btn-primary me-2" id="uploadFolderBtn">
+                    <i class="bi bi-upload"></i> Загрузить папку
+                </button>
+                <button type="button" class="btn btn-success" data-bs-toggle="modal"
                         data-bs-target="#createFolderModal">
                     <i class="bi bi-folder-plus"></i> Создать папку
                 </button>
+                <!-- Скрытый input для выбора папки -->
+                <input type="file" id="folder_input_element" webkitdirectory directory multiple style="display: none;">
             </div>
         </div>
 
@@ -49,6 +60,40 @@
             <input type="file" id="fileInput" multiple style="display: none;">
         </div>
 
+        <!-- Контейнер для прогресса загрузки папки -->
+        <div id="folderUploadProgressContainer" style="display: none;" class="mt-3 mb-3">
+            <p><strong>Загрузка папки:</strong></p>
+            <div class="progress mb-1">
+                <div id="folderProgressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                     role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%
+                </div>
+            </div>
+            <div class="d-flex justify-content-between">
+                <small id="folderProgressCounter" class="text-muted">0/0 файлов</small>
+                <small id="currentFileUploading" class="text-info"></small>
+            </div>
+            <div id="folderUploadErrorsContainer" class="mt-2" style="display: none;">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <strong class="text-danger">Ошибки при загрузке:</strong>
+                    <button id="clearFolderUploadErrorsBtn" type="button"
+                            class="btn btn-sm btn-outline-secondary py-0 px-1" title="Очистить список ошибок">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor"
+                             class="bi bi-x-lg" viewBox="0 0 16 16">
+                            <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
+                        </svg>
+                        Очистить
+                    </button>
+                </div>
+                <ul id="folderUploadErrorList" class="list-group list-group-flush"
+                    style="max-height: 150px; overflow-y: auto;">
+                    <!-- Ошибки будут добавляться сюда -->
+                </ul>
+            </div>
+        </div>
+
+        <!-- Контейнер для финального сообщения -->
+        <div id="uploadFinalStatusMessage" class="mt-2"></div>
+
         <!-- Список выбранных файлов для загрузки -->
         <div id="selectedFilesList" class="mb-3" style="display: none;">
             <h5>Файлы для загрузки:</h5>
@@ -56,6 +101,7 @@
                 <!-- Файлы будут добавлены сюда JS-ом -->
             </ul>
         </div>
+
 
         <!-- Кнопки управления загрузкой -->
         <div id="uploadActions" class="mb-3" style="display: none;">
@@ -292,4 +338,5 @@
         });
     </script>
     <script src="{% static 'js/create_directory.js' %}"></script>
+    <script src="{% static 'js/folder_uploader.js' %}" defer></script>
 {% endblock %}
