@@ -19,7 +19,7 @@ class FileType(models.TextChoices):
 class UserFile(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='files')
-    file = models.FileField(upload_to=user_directory_path, null=True, blank=True)
+    file = models.FileField(upload_to=user_directory_path, null=True, blank=True, max_length=500)
     name = models.CharField(max_length=255)
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE, related_name='children')
     object_type = models.CharField(max_length=10, choices=FileType.choices, default=FileType.FILE)
