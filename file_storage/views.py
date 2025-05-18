@@ -52,6 +52,7 @@ class FileListView(LoginRequiredMixin, ListView):
                         )
                         current_parent_obj = obj
                     self.current_directory = current_parent_obj
+
                 except UserFile.DoesNotExist:
                     logger.error(
                         f"User '{user.username}': Directory not found for path component '{name_part}' "
@@ -160,7 +161,6 @@ class FileListView(LoginRequiredMixin, ListView):
                     user=request.user,
                     name=directory_name,
                     parent=parent_object,
-                    object_type=FileType.DIRECTORY
             ).exists():
                 logger.warning(
                     f"User {request.user.username}: Directory: {directory_name} "
@@ -168,7 +168,7 @@ class FileListView(LoginRequiredMixin, ListView):
                 )
                 return JsonResponse({
                     'status': 'error',
-                    'message': f"Папка с именем '{directory_name}' уже существует в текущей директории."
+                    'message': f"Файл или папка с именем '{directory_name}' уже существует в текущей директории."
                 }, status=400)
 
             new_directory = form.save(commit=False)
@@ -275,7 +275,7 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 parent=parent_object,
                 name=uploaded_file_name
         ).exists():
-            logger.warning(f"Upload failed. File with this name already exists. {log_prefix}")
+            logger.warning(f"Upload failed. File or directory with this name already exists. {log_prefix}")
             return {
                 'name': uploaded_file_name,
                 'status': 'error',
@@ -332,6 +332,10 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
             f"{self.__class__.__name__}: User '{user.username}' ID: {user.id} initiated file upload. "
             f"Number of files: {len(files)}. Target parent_id: '{parent_id}'."
         )
+
+        if not files:
+            logger.warning(f"User '{user.username}': File upload request received without files.")
+            return JsonResponse({'error': 'Файл отсутствует'}, status=400)
 
         if parent_id:
             try:
