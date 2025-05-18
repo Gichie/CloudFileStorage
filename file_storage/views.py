@@ -259,7 +259,45 @@ class FileListView(LoginRequiredMixin, ListView):
 
 
 class FileUploadAjaxView(LoginRequiredMixin, View):
-    def _handle_file_upload(self, uploaded_file, user, parent_object):
+    def create_directories_from_path(self, user, parent_object, path_components):
+        current_parent = parent_object
+
+        for directory_name in path_components:
+            directory_object, created = UserFile.objects.get_or_create(
+                user=user,
+                name=directory_name,
+                parent=current_parent,
+                object_type=FileType.DIRECTORY,
+            )
+
+            if created:
+                logger.info(
+                    f"User '{user.username}': Created directory '{directory_name}' "
+                    f"(ID: {directory_object.id}) under parent "
+                    f"'{current_parent.name if current_parent else 'root'}'."
+                )
+                try:
+                    # Создание "директории" в S3/Minio
+                    s3_client = get_s3_client()
+                    key = directory_object.get_s3_key_for_directory_marker()
+                    create_empty_directory_marker(
+                        s3_client,
+                        settings.AWS_STORAGE_BUCKET_NAME,
+                        key
+                    )
+                    logger.info(f"User '{user.username}': S3 marker created for directory '{key}'.")
+                except (NoCredentialsError, ClientError, BotoCoreError) as e:
+                    logger.error(
+                        f"User '{user.username}': FAILED to create S3 marker for directory '{directory_object.name}' "
+                        f"(ID: {directory_object.id}). Error: {e}",
+                        exc_info=True
+                    )
+                    raise Exception(f"Ошибка создания папки {directory_name} в S3 хранилище.") from e
+
+            current_parent = directory_object
+        return current_parent
+
+    def _handle_file_upload(self, uploaded_file, user, parent_object, relative_path):
         """
         Обрабатывает один загруженный файл: проверяет, создает UserFile, загружает файл в Minio через FileField.
         Возвращает словарь с результатом.
@@ -268,12 +306,41 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
         uploaded_file_name = uploaded_file.name
 
         log_prefix = (f"User '{user.username}' (ID: {user.id}), File '{uploaded_file_name}', "
-                      f"Parent ID: {parent_object.id if parent_object else 'None'}:")
+                      f"Parent ID: {parent_object.id if parent_object else 'None'}, relative_path: {relative_path}")
+
+        if relative_path:
+            path_components = [component for component in relative_path.split('/') if component]
+
+            if not path_components:
+                logger.warning(f"Invalid relative path {log_prefix}")
+                return {
+                    'name': uploaded_file_name,
+                    'status': 'error',
+                    'error': f'Некорректный относительный путь {relative_path}'
+                }
+
+            directory_path_parts = path_components[:-1]
+
+            try:
+                if directory_path_parts:
+                    with transaction.atomic():
+                        parent_object = self.create_directories_from_path(user, parent_object, directory_path_parts)
+            except Exception as e:
+                logger.error(
+                    f"Failed to create directory structure for '{relative_path}'. User: {user.username}. Error: {e}",
+                    exc_info=True
+                )
+                return {
+                    'name': uploaded_file_name,
+                    'status': 'error',
+                    'error': f'Ошибка при создании структуры папок ({", ".join(directory_path_parts)}): {e}',
+                    'relative_path': relative_path
+                }
 
         if UserFile.objects.filter(
                 user=user,
                 parent=parent_object,
-                name=uploaded_file_name
+                name=uploaded_file_name,
         ).exists():
             logger.warning(f"Upload failed. File or directory with this name already exists. {log_prefix}")
             return {
@@ -323,11 +390,13 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
             }
 
     def post(self, request, *args, **kwargs):
-        files = request.FILES.getlist('files')
+        files = request.FILES.getlist('files') or request.FILES.getlist('file')
+        relative_path = request.POST.get('relative_path')
         parent_id = request.POST.get('parent_id')
-        user = request.user
         parent_object = None
+        user = request.user
 
+        # todo адаптировать логи под загрузку папки
         logger.info(
             f"{self.__class__.__name__}: User '{user.username}' ID: {user.id} initiated file upload. "
             f"Number of files: {len(files)}. Target parent_id: '{parent_id}'."
@@ -378,10 +447,6 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                     status=500,
                 )
 
-        if not files:
-            logger.warning(f"User '{user.username}': File upload request received without files.")
-            return JsonResponse({'error': 'Файлы не педоставлены'}, status=400)
-
         results = []
         for uploaded_file in files:
             form_data = {'parent': parent_object.pk if parent_object else None}
@@ -390,7 +455,7 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
 
             if form.is_valid():
                 try:
-                    result = self._handle_file_upload(uploaded_file, user, parent_object)
+                    result = self._handle_file_upload(uploaded_file, user, parent_object, relative_path)
                     results.append(result)
                 except Exception as e:
                     logger.critical(
