@@ -4,6 +4,7 @@ import urllib
 
 from botocore.exceptions import NoCredentialsError, BotoCoreError, ClientError
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import SuspiciousFileOperation
 from django.db import transaction, IntegrityError
 from django.http import Http404, JsonResponse
 from django.urls import reverse
@@ -303,10 +304,17 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                     'id': str(user_file_instance.id)
                 }
 
+        except SuspiciousFileOperation as e:
+            logger.warning(f"Loading error: path too long {log_prefix}: {e}", exc_info=True)
+            return {
+                'name': uploaded_file_name,
+                'status': 'error',
+                'error': 'Ошибка при загрузке файла: слишком длинный путь для файла'
+            }
         except Exception as e:
             logger.error(
                 f"{log_prefix} Error during file save or Minio upload: {e}",
-                exc_info=True  # Добавляет traceback в лог
+                exc_info=True
             )
             return {
                 'name': uploaded_file_name,
@@ -347,6 +355,14 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 return JsonResponse(
                     data={'error': 'Найдено несколько родительских папок с одинаковым названием'},
                     status=500,
+                )
+            except (ValueError, TypeError):
+                logger.warning(
+                    f"User '{user.username}': Invalid base parent directory ID '{parent_id}'."
+                )
+                return JsonResponse(
+                    data={'error': 'Некорректный ID родительской папки.'},
+                    status=400,
                 )
             except Exception as e:
                 logger.error(
