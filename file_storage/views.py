@@ -2,16 +2,18 @@ import json
 import logging
 import urllib
 
-from botocore.exceptions import NoCredentialsError, BotoCoreError, ClientError
+from botocore.exceptions import NoCredentialsError, BotoCoreError, ClientError, ParamValidationError
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import SuspiciousFileOperation
 from django.db import transaction, IntegrityError
-from django.http import Http404, JsonResponse
+from django.http import Http404, JsonResponse, HttpResponseRedirect
+from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.views import View
 from django.views.generic import ListView
 
 from cloud_file_storage import settings
+from file_storage.exceptions import NameConflictError
 from file_storage.forms import FileUploadForm, DirectoryCreationForm
 from file_storage.models import UserFile, FileType
 from file_storage.utils.minio import get_s3_client, create_empty_directory_marker
@@ -36,7 +38,7 @@ class FileListView(LoginRequiredMixin, ListView):
         )
 
         if path_param_encoded:
-            unquoted_path = urllib.parse.unquote_plus(path_param_encoded)
+            unquoted_path = urllib.parse.unquote(path_param_encoded)
             path_components = [comp for comp in unquoted_path.split('/') if comp and comp not in ['.', '..']]
             self.current_path_unencoded = "/".join(path_components)
             current_parent_obj = None
@@ -263,6 +265,17 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
         current_parent = parent_object
 
         for directory_name in path_components:
+            if UserFile.objects.filter(
+                user=user,
+                name=directory_name,
+                parent=current_parent,
+                object_type=FileType.FILE
+            ).exists():
+                message = (f"Upload failed. File with this name already exists. User: {user}. "
+                          f"Name: {directory_name}, parent: {current_parent}")
+                logger.warning(message)
+                raise NameConflictError(message, directory_name, current_parent)
+
             directory_object, created = UserFile.objects.get_or_create(
                 user=user,
                 name=directory_name,
@@ -325,6 +338,15 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 if directory_path_parts:
                     with transaction.atomic():
                         parent_object = self.create_directories_from_path(user, parent_object, directory_path_parts)
+
+            except NameConflictError as e:
+                return {
+                    'name': e.name,
+                    'status': 'error',
+                    'error': e.get_message(),
+                    'relative_path': relative_path
+                }
+
             except Exception as e:
                 logger.error(
                     f"Failed to create directory structure for '{relative_path}'. User: {user.username}. Error: {e}",
@@ -333,7 +355,7 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 return {
                     'name': uploaded_file_name,
                     'status': 'error',
-                    'error': f'Ошибка при создании структуры папок ({", ".join(directory_path_parts)}): {e}',
+                    'error': f'Ошибка при создании структуры папок',
                     'relative_path': relative_path
                 }
 
@@ -342,12 +364,9 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 parent=parent_object,
                 name=uploaded_file_name,
         ).exists():
-            logger.warning(f"Upload failed. File or directory with this name already exists. {log_prefix}")
-            return {
-                'name': uploaded_file_name,
-                'status': 'error',
-                'error': 'Файл или папка с таким именем уже существует.'
-            }
+            message = f"Upload failed. File or directory with this name already exists. {log_prefix}"
+            logger.warning(message)
+            raise NameConflictError(message, uploaded_file_name, parent_object)
 
         try:
             with transaction.atomic():
@@ -457,6 +476,12 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 try:
                     result = self._handle_file_upload(uploaded_file, user, parent_object, relative_path)
                     results.append(result)
+                except NameConflictError as e:
+                    results.append({
+                        'name': e.name,
+                        'status': 'error',
+                        'error': e.get_message(),
+                    })
                 except Exception as e:
                     logger.critical(
                         f"User '{user.username}': Critical unhandled error in _handle_file_upload for file '{uploaded_file.name}': {e}",
@@ -497,6 +522,31 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
 
         return JsonResponse({'message': message, 'results': results}, status=http_status)
 
+
+class DownloadFileView(LoginRequiredMixin, View):
+    def get(self, request, file_id):
+        user_file = get_object_or_404(UserFile, id=file_id, user=request.user)
+        s3_client = get_s3_client()
+        s3_key = user_file.file.name
+
+        try:
+            presigned_url = s3_client.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
+                    'Key': s3_key,
+                    'ResponseContentDisposition': f'attachment; filename="{user_file.name}"'
+                },
+                ExpiresIn=1800
+            )
+            logger.info(f"File downloaded successfully. s3_key: {s3_key}, presigned_url: {presigned_url}")
+            return HttpResponseRedirect(presigned_url)
+        except ClientError as e:
+            logger.error(f"Error generating presigned URL for s3_key: {s3_key}: {e}")
+            raise Http404("Не удалось скачать файл")
+        except ParamValidationError as e:
+            logger.error(f"{e}")
+            raise Http404("Не удалось скачать файл")
 
 class DeleteView(LoginRequiredMixin, ListView):
     pass
