@@ -226,16 +226,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 folderUploadProgressContainer.style.display = 'none';
             }
 
-            // Опционально: можно сбросить значения в прогресс-баре и счетчиках,
-            // хотя они и так будут скрыты. Это для чистоты, если контейнер
-            // folderUploadProgressContainer будет снова показан без вызова resetFolderUploadUI.
             if (folderProgressBar) {
                 folderProgressBar.style.width = '0%';
                 folderProgressBar.textContent = '0%';
                 folderProgressBar.classList.remove('bg-success', 'bg-danger', 'bg-warning');
-                // Важно: если анимация была убрана, ее нужно вернуть, если планируется повторное использование
-                // Но resetFolderUploadUI это делает при новой загрузке.
-                // folderProgressBar.classList.add('progress-bar-animated'); // Это сделает resetFolderUploadUI
+
             }
             if (folderProgressCounter) folderProgressCounter.textContent = `0/0 файлов`;
             if (currentFileUploading) currentFileUploading.textContent = '';
