@@ -34,7 +34,7 @@ class UserFile(models.Model):
 
     def __str__(self):
         if self.parent:
-            return f"{self.name})"
+            return f"{self.name}"
         return str(self.name or "Без названия")
 
     def is_directory(self):
