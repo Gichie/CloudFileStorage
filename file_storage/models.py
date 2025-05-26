@@ -38,7 +38,7 @@ class UserFile(models.Model):
         return str(self.name or "Без названия")
 
     def is_directory(self):
-        return self.object_type == 'directory'
+        return self.object_type == FileType.DIRECTORY
 
     def get_full_path(self):
         if self.parent:
