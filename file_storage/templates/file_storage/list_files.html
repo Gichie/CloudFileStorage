@@ -186,11 +186,18 @@
                                     data-item-type="{% if item.is_directory %}папку{% else %}файл{% endif %}">
                                 <i class="bi bi-trash3"></i>
                             </button>
-                            {% if not item.is_directory %}
-                                <a href="#" class="btn btn-sm btn-outline-success"
-                                   title="Скачать">
-                                    <i class="bi bi-download"></i>
-                                </a>
+                            {% if item %}
+                                {% if item.object_type == 'file' %}
+                                    <a href="{% url 'file_storage:download_file' item.id %}" class="btn btn-sm btn-outline-success"
+                                       title="Скачать  {{ item.name }}">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                {% elif item.object_type == 'directory' %}
+                                    <a href="{% url 'file_storage:download_directory' item.id %}" class="btn btn-sm btn-outline-success"
+                                       title="Скачать архив {{ item.name }}">
+                                        <i class="bi bi-folder-symlink"></i>
+                                    </a>
+                                {% endif %}
                             {% endif %}
                         </td>
                     </tr>
