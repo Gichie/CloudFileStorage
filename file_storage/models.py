@@ -48,11 +48,21 @@ class UserFile(models.Model):
             return f"user_{self.user.id}/{self.name}{'/' if self.is_directory() else ''}"
 
     def save(self, *args, **kwargs):
+        old_path = self.path if self.pk else None
+        self.path = self.get_full_path()
+
         if self.file and not self.is_directory():
             self.file_size = self.file.size
             self.content_type = self.file.file.content_type
 
         super().save(*args, **kwargs)
+
+        if old_path and old_path != self.path:
+            self.update_children_paths()
+
+    def update_children_paths(self):
+        for child in self.children.all():
+            child.save()
 
     def get_s3_key_for_file_content(self):
         # Возвращает ключ, по которому FileField хранит содержимое файла
@@ -64,11 +74,11 @@ class UserFile(models.Model):
         # Возвращает ключ для объекта-маркера папки в S3 (если используется)
         if self.is_directory():
             # Используем get_full_path() для логического пути папки
-            return f"{self.get_full_path()}.empty_folder_marker"  # Убедитесь, что get_full_path() корректен
+            return f"{self.get_full_path()}.empty_folder_marker"
         return None
 
     def get_path_for_url(self):
-        if not self.is_directory():  # Файлы не имеют пути для навигации таким образом
+        if not self.is_directory():
             return ""
         path_parts = []
         current = self
