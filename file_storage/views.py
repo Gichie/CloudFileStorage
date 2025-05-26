@@ -6,7 +6,7 @@ from botocore.exceptions import NoCredentialsError, BotoCoreError, ClientError, 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import SuspiciousFileOperation
 from django.db import transaction, IntegrityError
-from django.http import Http404, JsonResponse, HttpResponseRedirect
+from django.http import Http404, JsonResponse, HttpResponseRedirect, StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.views import View
@@ -16,6 +16,7 @@ from cloud_file_storage import settings
 from file_storage.exceptions import NameConflictError
 from file_storage.forms import FileUploadForm, DirectoryCreationForm
 from file_storage.models import UserFile, FileType
+from file_storage.utils.archive_service import ZipStreamGenerator
 from file_storage.utils.minio import get_s3_client, create_empty_directory_marker
 
 logger = logging.getLogger(__name__)
@@ -266,13 +267,13 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
 
         for directory_name in path_components:
             if UserFile.objects.filter(
-                user=user,
-                name=directory_name,
-                parent=current_parent,
-                object_type=FileType.FILE
+                    user=user,
+                    name=directory_name,
+                    parent=current_parent,
+                    object_type=FileType.FILE
             ).exists():
                 message = (f"Upload failed. File with this name already exists. User: {user}. "
-                          f"Name: {directory_name}, parent: {current_parent}")
+                           f"Name: {directory_name}, parent: {current_parent}")
                 logger.warning(message)
                 raise NameConflictError(message, directory_name, current_parent)
 
@@ -525,7 +526,7 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
 
 class DownloadFileView(LoginRequiredMixin, View):
     def get(self, request, file_id):
-        user_file = get_object_or_404(UserFile, id=file_id, user=request.user)
+        user_file = get_object_or_404(UserFile, id=file_id, user=request.user, object_type=FileType.FILE)
         s3_client = get_s3_client()
         s3_key = user_file.file.name
 
@@ -547,6 +548,32 @@ class DownloadFileView(LoginRequiredMixin, View):
         except ParamValidationError as e:
             logger.error(f"{e}")
             raise Http404("Не удалось скачать файл")
+
+
+class DownloadDirectoryView(LoginRequiredMixin, View):
+    def get(self, request, directory_id):
+        directory = get_object_or_404(
+            UserFile, id=directory_id, user=request.user, object_type=FileType.DIRECTORY
+        )
+
+        zip_generator = ZipStreamGenerator(directory)
+
+        zip_filename = f"{directory.name}.zip"
+        encoded_zip_filename = urllib.parse.quote(zip_filename)
+
+        response = StreamingHttpResponse(
+            zip_generator.generate(), content_type='application/zip'
+        )
+
+        response['Content-Disposition'] = f'attachment; filename="{encoded_zip_filename}"'
+        response['Cache-Control'] = 'no-cache'
+
+        logger.info(f"User '{request.user.username}' started "
+                    f"downloading directory '{directory.name}' "
+                    f"as '{zip_filename}'.")
+
+        return response
+
 
 class DeleteView(LoginRequiredMixin, ListView):
     pass
