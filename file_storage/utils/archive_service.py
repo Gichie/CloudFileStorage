@@ -10,7 +10,7 @@ from file_storage.utils.minio import get_s3_client
 
 logger = logging.getLogger(__name__)
 
-READ_CHUNK_SIZE = 64 * 1024 * 1024  # 32 МБ
+READ_CHUNK_SIZE = 64 * 1024 * 1024  # 64 МБ
 
 
 class ZipStreamGenerator:
