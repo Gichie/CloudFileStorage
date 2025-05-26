@@ -1,9 +1,8 @@
-import io
 import logging
-import zipfile
 from typing import Iterator
 
 from botocore.exceptions import ClientError
+from zipstream import ZipStream, ZIP_DEFLATED
 
 from cloud_file_storage import settings
 from file_storage.models import UserFile, FileType
@@ -11,7 +10,7 @@ from file_storage.utils.minio import get_s3_client
 
 logger = logging.getLogger(__name__)
 
-READ_CHUNK_SIZE = 32 * 1024 * 1024  # 32 МБ
+READ_CHUNK_SIZE = 64 * 1024 * 1024  # 32 МБ
 
 
 class ZipStreamGenerator:
@@ -40,7 +39,9 @@ class ZipStreamGenerator:
             user=directory.user, path__startswith=directory.path
         ).exclude(
             id=directory.id
-        ).select_related().order_by('path', 'name'))
+        ).select_related('user').only(
+            'id', 'name', 'path', 'object_type', 'file', 'user__id'
+        ).order_by('path', 'name'))
 
         return all_files
 
@@ -61,48 +62,41 @@ class ZipStreamGenerator:
 
     def generate(self) -> Iterator[bytes]:
         """Генерирует ZIP-архив по частям"""
+        zs = ZipStream(compress_type=ZIP_DEFLATED)
+        all_files = self._get_all_files(self.directory)
 
-        # Создаем временный буфер
-        buffer = io.BytesIO()
+        for file_obj in all_files:
+            zip_path = self._get_zip_path(file_obj)
 
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            all_files = self._get_all_files(self.directory)
+            if file_obj.object_type == FileType.DIRECTORY:
+                zs.add(
+                    data=b'',
+                    arcname=zip_path,
+                )
+                logger.info(f"Added directory: '{file_obj.name}' to path: {zip_path}")
 
-            for file_obj in all_files:
-                zip_path = self._get_zip_path(file_obj)
-                zip_info = zipfile.ZipInfo(zip_path)
-                zip_info.compress_type = zipfile.ZIP_DEFLATED
+            elif file_obj.object_type == FileType.FILE:
+                s3_key = file_obj.file.name
+                file_size = None
+                try:
+                    head_response = self.s3_client.head_object(
+                        Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+                        Key=s3_key,
+                    )
+                    file_size = head_response['ContentLength']
+                except ClientError as e:
+                    logger.warning(
+                        f"Could not get ContentLength for S3 object {s3_key}. "
+                        f"File will be added to ZIP without pre-defined size. Error: {e}"
+                    )
 
-                if file_obj.object_type == FileType.DIRECTORY:
-                    zip_file.writestr(zip_info, b'')
-                    logger.info(f"Added directory: '{file_obj.name}' to path: {zip_path}")
+                zs.add(
+                    data=self._stream_file_from_s3(s3_key),
+                    arcname=zip_path,
+                    size=file_size,
+                )
 
-                elif file_obj.object_type == FileType.FILE:
-                    s3_key = file_obj.file.name
-
-                    try:
-                        head_response = self.s3_client.head_object(
-                            Bucket=settings.AWS_STORAGE_BUCKET_NAME,
-                            Key=s3_key,
-                        )
-                        file_size = head_response['ContentLength']
-                        zip_info.file_size = file_size
-
-                        with zip_file.open(zip_info, 'w') as zip_entry:
-                            for chunk in self._stream_file_from_s3(s3_key):
-                                zip_entry.write(chunk)
-
-                        logger.info(f"Added file: '{file_obj.name}' ({file_size} bytes) to path: {zip_path}")
-
-                    except ClientError as e:
-                        logger.error(f"Error processing file: '{file_obj.name}' "
-                                     f"to path: {zip_path} S3 Key: '{s3_key}' {e}")
-                        zip_file.writestr(zip_path, b'')
-
-        buffer.seek(0)
-        while True:
-            chunk = buffer.read(READ_CHUNK_SIZE)
-            if not chunk:
-                logger.info(f"User '{self.directory.user}' downloaded directory")
-                break
+        for chunk in zs:
             yield chunk
+
+        logger.info(f"User '{self.directory.user}' finished downloading directory '{self.directory.name}'.")
