@@ -7,7 +7,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import SuspiciousFileOperation
 from django.db import transaction, IntegrityError
-from django.http import Http404, JsonResponse, HttpResponseRedirect, StreamingHttpResponse
+from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views import View
@@ -17,105 +17,55 @@ from cloud_file_storage import settings
 from file_storage.exceptions import NameConflictError
 from file_storage.forms import FileUploadForm, DirectoryCreationForm
 from file_storage.models import UserFile, FileType
+from file_storage.utils import ui, path_utils
 from file_storage.utils.archive_service import ZipStreamGenerator
 from file_storage.utils.minio import get_s3_client, create_empty_directory_marker
 
 logger = logging.getLogger(__name__)
 
 
-class FileListView(LoginRequiredMixin, ListView):
+class c(LoginRequiredMixin, ListView):
     model = UserFile
     template_name = 'file_storage/list_files.html'
     context_object_name = 'items'
 
-    def get_queryset(self):
-        user = self.request.user
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        self.user = self.request.user
         path_param_encoded = self.request.GET.get('path')
-        self.current_directory = None
-        self.current_path_unencoded = ""
 
-        logger.info(
-            f"User '{user.username}' ID: {user.id} requested file list. "
-            f"Raw path_param: '{path_param_encoded}'"
-        )
+        self.current_directory, self.current_path_unencoded = path_utils.parse_directory_path(self.user,
+                                                                                              path_param_encoded)
 
-        if path_param_encoded:
-            unquoted_path = urllib.parse.unquote(path_param_encoded)
-            path_components = [comp for comp in unquoted_path.split('/') if comp and comp not in ['.', '..']]
-            self.current_path_unencoded = "/".join(path_components)
-            current_parent_obj = None
-
-            if self.current_path_unencoded:
-                try:
-                    for name_part in path_components:
-                        obj = UserFile.objects.get(
-                            user=user,
-                            name=name_part,
-                            parent=current_parent_obj,
-                            object_type=FileType.DIRECTORY
-                        )
-                        current_parent_obj = obj
-                    self.current_directory = current_parent_obj
-
-                except UserFile.DoesNotExist:
-                    logger.error(
-                        f"User '{user.username}': Directory not found for path component '{name_part}' "
-                        f"Full requested path: '{self.current_path_unencoded}'. Raising Http404."
-                    )
-                    raise Http404("Запрошенная директория не найдена или не является директорией.")
-                except UserFile.MultipleObjectsReturned:
-                    logger.error(
-                        f"User '{user.username}': Multiple objects returned for path component '{name_part}' "
-                        f"Full requested path: '{self.current_path_unencoded}'. This indicates a data integrity issue. Raising Http404."
-                    )
-                    raise Http404("Ошибка при поиске директории (найдено несколько объектов).")
-
+    def get_queryset(self):
         if self.current_directory:
-            queryset = UserFile.objects.filter(user=user, parent=self.current_directory)
-            logger.info(f"User '{user.username}': Successfully resolved path '{self.current_path_unencoded}'")
+            queryset = UserFile.objects.filter(user=self.user, parent=self.current_directory)
+            logger.info(f"User '{self.user.username}': Successfully resolved path '{self.current_path_unencoded}'")
         else:
-            queryset = UserFile.objects.filter(user=user, parent=None)
+            queryset = UserFile.objects.filter(user=self.user, parent=None)
             logger.info(
-                f"User '{user.username}': Listing root directory contents (no specific path or path resolved to root)."
+                f"User '{self.user.username}': "
+                f"Listing root directory contents (no specific path or path resolved to root)."
             )
 
         return queryset.order_by('object_type', 'name')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['current_directory'] = getattr(self, 'current_directory', None)
-        context['current_path_unencoded'] = getattr(self, 'current_path_unencoded', '')
-        breadcrumbs = []
-        parent_level_url = None
-        current_folder_id = None
+        context['current_directory'] = self.current_directory
+        context['current_path_unencoded'] = self.current_path_unencoded
 
-        if self.current_directory:
-            temp_dir = self.current_directory
-            path_parts_for_breadcrumbs_url = self.current_path_unencoded.split('/')
+        context['breadcrumbs'] = ui.generate_breadcrumbs(self.current_directory, self.current_path_unencoded)
 
-            while temp_dir:
-                breadcrumbs.insert(0, {
-                    'name': temp_dir.name,
-                    'url_path_encoded': urllib.parse.quote_plus('/'.join(path_parts_for_breadcrumbs_url))
-                })
-                path_parts_for_breadcrumbs_url.pop()
-                temp_dir = temp_dir.parent
+        # Формирование URL для кнопки "Назад"
+        context['parent_level_url'] = ui.get_parent_url(
+            self.current_directory, 'file_storage:list_files'
+        )
 
-            # Формирование URl для кнопки "Назад"
-            if self.current_directory.parent:
-                parent_path_encoded = self.current_directory.parent.get_path_for_url()
-                parent_level_url = f"{reverse('file_storage:list_files')}?path={parent_path_encoded}"
-            else:
-                parent_level_url = reverse('file_storage:list_files')
-
-            current_folder_id = self.current_directory.id
-
-        context['parent_level_url'] = parent_level_url
-        context['breadcrumbs'] = breadcrumbs
-        context['current_folder_id'] = current_folder_id
+        context['current_folder_id'] = self.current_directory.id if self.current_directory else None
 
         if 'form_create_folder' not in context:
-            context['form_create_folder'] = DirectoryCreationForm(user=self.request.user)
+            context['form_create_folder'] = DirectoryCreationForm(user=self.user)
 
         return context
 
