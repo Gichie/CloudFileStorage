@@ -3,11 +3,12 @@ import logging
 import urllib
 
 from botocore.exceptions import NoCredentialsError, BotoCoreError, ClientError, ParamValidationError
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import SuspiciousFileOperation
 from django.db import transaction, IntegrityError
 from django.http import Http404, JsonResponse, HttpResponseRedirect, StreamingHttpResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views import View
 from django.views.generic import ListView
@@ -544,10 +545,16 @@ class DownloadFileView(LoginRequiredMixin, View):
             return HttpResponseRedirect(presigned_url)
         except ClientError as e:
             logger.error(f"Error generating presigned URL for s3_key: {s3_key}: {e}")
-            raise Http404("Не удалось скачать файл")
+            messages.error(request, "Произошла ошибка при обращении к хранилищу, попробуйте позже")
+            return redirect(f'file_storage:list_files')
         except ParamValidationError as e:
             logger.error(f"{e}")
-            raise Http404("Не удалось скачать файл")
+            messages.error(request, "Произошла ошибка при запросе к хранилищу")
+            return redirect(f'file_storage:list_files')
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            messages.error(request, "Произошла ошибка при скачивании файла, попробуйте позже")
+            return redirect(f'file_storage:list_files')
 
 
 class DownloadDirectoryView(LoginRequiredMixin, View):
@@ -555,24 +562,27 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
         directory = get_object_or_404(
             UserFile, id=directory_id, user=request.user, object_type=FileType.DIRECTORY
         )
+        try:
+            zip_generator = ZipStreamGenerator(directory)
 
-        zip_generator = ZipStreamGenerator(directory)
+            zip_filename = f"{directory.name}.zip"
+            encoded_zip_filename = urllib.parse.quote(zip_filename)
 
-        zip_filename = f"{directory.name}.zip"
-        encoded_zip_filename = urllib.parse.quote(zip_filename)
+            response = StreamingHttpResponse(
+                zip_generator.generate(), content_type='application/zip'
+            )
 
-        response = StreamingHttpResponse(
-            zip_generator.generate(), content_type='application/zip'
-        )
+            response['Content-Disposition'] = f'attachment; filename="{encoded_zip_filename}"'
+            response['Cache-Control'] = 'no-cache'
 
-        response['Content-Disposition'] = f'attachment; filename="{encoded_zip_filename}"'
-        response['Cache-Control'] = 'no-cache'
-
-        logger.info(f"User '{request.user.username}' started "
-                    f"downloading directory '{directory.name}' "
-                    f"as '{zip_filename}'.")
-
-        return response
+            logger.info(f"User '{request.user.username}' started "
+                        f"downloading directory '{directory.name}' "
+                        f"as '{zip_filename}'.")
+            return response
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            messages.error(request, "Произошла ошибка при подготовке архива, попробуйте позже")
+            return redirect(f'file_storage:list_files')
 
 
 class DeleteView(LoginRequiredMixin, ListView):
