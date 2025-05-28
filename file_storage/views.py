@@ -24,7 +24,7 @@ from file_storage.utils.minio import get_s3_client, create_empty_directory_marke
 logger = logging.getLogger(__name__)
 
 
-class c(LoginRequiredMixin, ListView):
+class FileListView(LoginRequiredMixin, ListView):
     model = UserFile
     template_name = 'file_storage/list_files.html'
     context_object_name = 'items'
