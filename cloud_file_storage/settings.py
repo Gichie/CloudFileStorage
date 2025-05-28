@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from django.contrib import messages
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -191,4 +192,8 @@ SESSION_REDIS = {
     'db': 0,
     'password': None,
     'prefix': 'session',
+}
+
+MESSAGE_TAGS = {
+    messages.ERROR: 'danger',
 }
