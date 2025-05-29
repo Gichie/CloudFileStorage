@@ -6,7 +6,7 @@ from zipstream import ZipStream, ZIP_DEFLATED
 
 from cloud_file_storage import settings
 from file_storage.models import UserFile, FileType
-from file_storage.utils.minio import get_s3_client
+from file_storage.utils.minio import minio_storage
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,6 @@ class ZipStreamGenerator:
 
     def __init__(self, root_directory):
         self.directory = root_directory
-        self.s3_client = get_s3_client()
 
     def _get_zip_path(self, file_obj) -> str:
         """Получает путь файла внутри ZIP"""
@@ -48,7 +47,7 @@ class ZipStreamGenerator:
     def _stream_file_from_s3(self, s3_key: str) -> Iterator[bytes]:
         """Потоковое чтение файла из S3"""
         try:
-            response = self.s3_client.get_object(
+            response = minio_storage.s3_client.get_object(
                 Bucket=settings.AWS_STORAGE_BUCKET_NAME,
                 Key=s3_key,
             )
@@ -79,7 +78,7 @@ class ZipStreamGenerator:
                 s3_key = file_obj.file.name
                 file_size = None
                 try:
-                    head_response = self.s3_client.head_object(
+                    head_response = minio_storage.s3_client.head_object(
                         Bucket=settings.AWS_STORAGE_BUCKET_NAME,
                         Key=s3_key,
                     )

@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <div class="container">
+        <h2>Результаты поиска</h2>
+        <div class="row">
+            <div class="col-md-12">
+
+                {% include 'includes/search_form.html' %}
+
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            Результаты поиска: "{{ query }}"
+                        </h5>
+                        <a href="{% url 'file_storage:list_files' %}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Вернуться к файлам
+                        </a>
+                    </div>
+                    <div class="card-body">
+                        {% if search_results %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead class="table-light">
+                                    <tr>
+                                        <th scope="col" class="text-center" style="width: 60px;">Тип</th>
+                                        <th scope="col" style="width: 25%;">Имя</th>
+                                        <th scope="col">Путь</th>
+                                        <th scope="col" class="text-center" style="width: 140px;">Действия</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    {% for item in search_results %}
+                                        <tr>
+                                            {# Колонка "Тип" #}
+                                            <td class="text-center">
+                                                {% if item.is_directory %}
+                                                    <i class="bi bi-folder-fill fs-4 text-warning"></i>
+                                                {% else %}
+                                                    <i class="bi bi-file-earmark fs-4 text-primary"></i>
+                                                {% endif %}
+                                            </td>
+
+                                            {# Колонка "Имя" #}
+                                            <td>
+                                                {% if item.is_directory %}
+                                                    <a href="{% url 'file_storage:list_files' %}?path={{ item.get_path_for_url }}"
+                                                       class="text-decoration-none">
+                                                        {{ item.name }}
+                                                    </a>
+                                                {% else %}
+                                                    <a href="{% url 'file_storage:list_files' %}?path={{ item.parent.get_path_for_url }}"
+                                                       class="text-dark text-decoration-none">
+                                                        {{ item.name }}
+                                                    </a>
+                                                {% endif %}
+                                            </td>
+
+                                            {# Колонка "Путь" #}
+                                            <td>
+                                                <div class="text-muted small text-truncate" style="max-width: 650px;"
+                                                     title="{{ item.get_display_path }}">
+                                                    {{ item.get_display_path }}
+                                                </div>
+                                            </td>
+
+                                            {# Колонка "Действия" - ОПТИМИЗИРОВАННАЯ #}
+                                            <td class="text-center">
+                                                <div class="btn-group btn-group-sm">
+                                                    {% if item.is_directory %}
+                                                        <a href="{% url 'file_storage:list_files' %}?path={{ item.get_path_for_url }}"
+                                                           class="btn btn-outline-secondary">
+                                                            <i class="bi bi-folder-symlink"></i> Открыть
+                                                        </a>
+                                                    {% else %}
+                                                        <a href="{% url 'file_storage:list_files' %}?path={{ item.parent.get_path_for_url }}"
+                                                           class="btn btn-outline-secondary py-1 px-1">
+                                                            <i class="bi bi-folder-symlink"></i> Расположение
+                                                        </a>
+                                                    {% endif %}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle"></i> По вашему запросу ничего не найдено.
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

@@ -22,7 +22,7 @@ class TestLogin(TestCase):
         cls.signup_url = reverse('users:registration')
         cls.login_url = reverse('users:login')
         cls.logout_url = reverse('users:logout')
-        cls.home_url = reverse('file_storage:home')
+        cls.home_url = reverse('file_storage:list_files')
         cls.valid_username = 'testuser'
         cls.valid_password = 'testpass123'
         cls.valid_email = 'test@sobaka.gav'

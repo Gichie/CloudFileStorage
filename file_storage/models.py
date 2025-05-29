@@ -47,6 +47,11 @@ class UserFile(models.Model):
         else:
             return f"user_{self.user.id}/{self.name}{'/' if self.is_directory() else ''}"
 
+    @property
+    def get_display_path(self):
+        path = '/'.join(self.path.split('/')[1:])
+        return path
+
     def save(self, *args, **kwargs):
         old_path = self.path if self.pk else None
         self.path = self.get_full_path()

@@ -4,7 +4,6 @@
 {% block title %}Файловое хранилище{% endblock %}
 
 {% block extra_css %}
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="{% static 'css/style.css' %}">
 {% endblock %}
 
@@ -102,7 +101,6 @@
             </ul>
         </div>
 
-
         <!-- Кнопки управления загрузкой -->
         <div id="uploadActions" class="mb-3" style="display: none;">
             <button id="startUploadButton" class="btn btn-primary me-2">
@@ -123,6 +121,8 @@
         </div>
         <div id="uploadMessages" class="mt-2"></div>
 
+        {% include 'includes/search_form.html' %}
+
         {% if not items and not current_directory.parent and not current_path_unencoded %}
             <p class="text-muted">В корневой папке пока нет файлов или папок.</p>
         {% elif not items %}
@@ -133,7 +133,7 @@
             <table class="table table-hover">
                 <thead class="table-light">
                 <tr>
-                    <th scope="col" style="width: 5%;">Тип</th>
+                    <th scope="col" style="width: 4%;">Тип</th>
                     <th scope="col">Имя</th>
                     <th scope="col" style="width: 15%;">Размер</th>
                     <th scope="col" style="width: 20%;">Дата изменения</th>
@@ -156,9 +156,9 @@
                     <tr>
                         <td>
                             {% if item.is_directory %}
-                                <i class="bi bi-folder-fill fs-4 text-primary"></i>
+                                <i class="bi bi-folder-fill fs-4 text-warning"></i>
                             {% else %}
-                                <i class="bi bi-file-earmark-text fs-4 text-secondary"></i>
+                                <i class="bi bi-file-earmark fs-4 text-primary"></i>
                             {% endif %}
                         </td>
                         <td>
