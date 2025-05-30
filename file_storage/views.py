@@ -257,14 +257,20 @@ class FileSearchView(LoginRequiredMixin, View):
         context = {}
         query = request.GET.get('query', None)
         context['query'] = query
-        search_results = UserFile.objects.filter(name__icontains=query).order_by('object_type', 'name')
+        if query:
+            search_results = UserFile.objects.filter(
+                user=request.user, name__icontains=query
+            ).order_by('object_type', 'name')
+        else:
+            search_results = None
         context['search_results'] = search_results
 
         return render(request, self.template_name, context)
 
 
-class DeleteView(LoginRequiredMixin, ListView):
-    pass
+class DeleteView(LoginRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        return HttpResponse("Удаление выполнено", status=200)
 
 
 class RenameView(LoginRequiredMixin, ListView):

@@ -328,17 +328,16 @@ document.addEventListener('DOMContentLoaded', function () {
     if (deleteModal) {
         deleteModal.addEventListener('show.bs.modal', function (event) {
             const button = event.relatedTarget;
-            const itemId = button.getAttribute('data-item-id');
-            const itemName = button.getAttribute('data-item-name');
-            const itemType = button.getAttribute('data-item-type');
+            const data = {
+                id: button.getAttribute('data-item-id'),
+                name: button.getAttribute('data-item-name'),
+                type: button.getAttribute('data-item-type')
+            };
 
-            const modalBodyName = deleteModal.querySelector('#deleteItemName');
-            const modalBodyType = deleteModal.querySelector('#deleteItemType');
-            const itemIdInput = deleteModal.querySelector('#deleteItemId');
-
-            modalBodyName.textContent = itemName;
-            modalBodyType.textContent = itemType;
-            itemIdInput.value = itemId;
+            // Установка значений в модальное окно
+            deleteModal.querySelector('#deleteItemName').textContent = data.name;
+            deleteModal.querySelector('#deleteItemType').textContent = data.type;
+            deleteModal.querySelector('#deleteItemId').value = data.id;
         });
     }
 });

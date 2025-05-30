@@ -88,7 +88,7 @@ function initializeCreateDirectoryModal() {
                 // но для простоты пока перезагрузим страницу.
                 window.location.reload();
             } else {
-                // Обработка ошибок от сервера (валидация или другие)
+                // Обработка ошибок от сервера
                 if (body.errors) {
                     // Ошибки конкретного поля 'name'
                     if (body.errors.name) {
@@ -125,9 +125,7 @@ function initializeCreateDirectoryModal() {
     });
 }
 
-// **Ключевая часть:** Вызываем initializeCreateDirectoryModal
-// либо сразу, если DOM уже готов, либо по событию DOMContentLoaded.
-if (document.readyState === 'loading') { // DOM еще загружается
+if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeCreateDirectoryModal);
 } else {
     initializeCreateDirectoryModal();

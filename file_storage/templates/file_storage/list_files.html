@@ -130,81 +130,112 @@
         {% endif %}
 
         {% if items or current_directory %}
-            <table class="table table-hover">
-                <thead class="table-light">
-                <tr>
-                    <th scope="col" style="width: 4%;">Тип</th>
-                    <th scope="col">Имя</th>
-                    <th scope="col" style="width: 15%;">Размер</th>
-                    <th scope="col" style="width: 20%;">Дата изменения</th>
-                    <th scope="col" style="width: 15%;">Действия</th>
-                </tr>
-                </thead>
-                <tbody>
-                {% if parent_level_url %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
                     <tr>
-                        <td><i class="bi bi-arrow-90deg-up fs-4 text-secondary"></i></td>
-                        <td colspan="4">
-                            <a href="{{ parent_level_url }}" class="text-decoration-none">
-                                Назад
-                            </a>
-                        </td>
+                        <th scope="col" style="width: 4%;">Тип</th>
+                        <th scope="col">Имя</th>
+                        <th scope="col" style="width: 15%;">Размер</th>
+                        <th scope="col" style="width: 20%;">Дата изменения</th>
+                        <th scope="col" style="width: 15%;">Действия</th>
                     </tr>
-                {% endif %}
+                    </thead>
+                    <tbody>
+                    {% if parent_level_url %}
+                        <tr>
+                            <td><i class="bi bi-arrow-90deg-up fs-4 text-secondary"></i></td>
+                            <td colspan="4">
+                                <a href="{{ parent_level_url }}" class="text-decoration-none">
+                                    Назад
+                                </a>
+                            </td>
+                        </tr>
+                    {% endif %}
 
-                {% for item in items %}
-                    <tr>
-                        <td>
-                            {% if item.is_directory %}
-                                <i class="bi bi-folder-fill fs-4 text-warning"></i>
-                            {% else %}
-                                <i class="bi bi-file-earmark fs-4 text-primary"></i>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if item.is_directory %}
-                                <a href="{% url 'file_storage:list_files' %}?path={{ item.get_path_for_url }}"
-                                   class="text-decoration-none">{{ item.name }}</a>
-                            {% else %}
-                                {{ item.name }}
-                                {# <a href="{% url 'download_file' item.id %}" >{{ item.name }}</a> #}
-                            {% endif %}
-                        </td>
-                        <td>{% if not item.is_directory and item.file_size is not None %}
-                            {{ item.file_size|filesizeformat }}{% else %}—{% endif %}</td>
-                        <td>{{ item.last_modified|date:"d.m.Y H:i" }}</td>
-                        <td>
-                            <button type="button" class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal"
-                                    data-bs-target="#renameModal" data-item-id="{{ item.id }}"
-                                    data-item-name="{{ item.name }}"
-                                    data-item-type="{% if item.is_directory %}folder{% else %}file{% endif %}">
-                                <i class="bi bi-pencil-square"></i>
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal"
-                                    data-bs-target="#deleteModal" data-item-id="{{ item.id }}"
-                                    data-item-name="{{ item.name }}"
-                                    data-item-type="{% if item.is_directory %}папку{% else %}файл{% endif %}">
-                                <i class="bi bi-trash3"></i>
-                            </button>
-                            {% if item %}
-                                {% if item.object_type == 'file' %}
-                                    <a href="{% url 'file_storage:download_file' item.id %}" class="btn btn-sm btn-outline-success"
-                                       title="Скачать  {{ item.name }}">
-                                        <i class="bi bi-download"></i>
-                                    </a>
-                                {% elif item.object_type == 'directory' %}
-                                    <a href="{% url 'file_storage:download_directory' item.id %}" class="btn btn-sm btn-outline-success"
-                                       title="Скачать архив {{ item.name }}">
-                                        <i class="bi bi-folder-symlink"></i>
-                                    </a>
+                    {% for item in items %}
+                        <tr>
+                            <td>
+                                {% if item.is_directory %}
+                                    <i class="bi bi-folder-fill fs-4 text-warning"></i>
+                                {% else %}
+                                    <i class="bi bi-file-earmark fs-4 text-primary"></i>
                                 {% endif %}
-                            {% endif %}
-                        </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
+                            </td>
+                            <td>
+                                {% if item.is_directory %}
+                                    <a href="{% url 'file_storage:list_files' %}?path={{ item.get_path_for_url }}"
+                                       class="text-decoration-none">{{ item.name }}</a>
+                                {% else %}
+                                    {{ item.name }}
+                                {% endif %}
+                            </td>
+                            <td>{% if not item.is_directory and item.file_size is not None %}
+                                {{ item.file_size|filesizeformat }}{% else %}—{% endif %}</td>
+                            <td>{{ item.last_modified|date:"d.m.Y H:i" }}</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal"
+                                        data-bs-target="#renameModal" data-item-id="{{ item.id }}"
+                                        data-item-name="{{ item.name }}"
+                                        data-item-type="{% if item.is_directory %}folder{% else %}file{% endif %}">
+                                    <i class="bi bi-pencil-square"></i>
+                                </button>
+
+                                <!-- Кнопка удалить -->
+                                <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal"
+                                        data-bs-target="#deleteModal" data-item-id="{{ item.id }}"
+                                        data-item-name="{{ item.name }}"
+                                        data-item-type="{% if item.is_directory %}папку{% else %}файл{% endif %}">
+                                    <i class="bi bi-trash3"></i>
+                                </button>
+
+                                {% if item %}
+                                    {% if item.object_type == 'file' %}
+                                        <a href="{% url 'file_storage:download_file' item.id %}"
+                                           class="btn btn-sm btn-outline-success"
+                                           title="Скачать  {{ item.name }}">
+                                            <i class="bi bi-download"></i>
+                                        </a>
+                                    {% elif item.object_type == 'directory' %}
+                                        <a href="{% url 'file_storage:download_directory' item.id %}"
+                                           class="btn btn-sm btn-outline-success"
+                                           title="Скачать архив {{ item.name }}">
+                                            <i class="bi bi-folder-symlink"></i>
+                                        </a>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         {% endif %}
+    </div>
+
+    <!-- Модальное окно "Удалить" -->
+    <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="post" action="{% url 'file_storage:delete_item' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="item_id" id="deleteItemId">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="deleteModalLabel">Подтверждение удаления</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Вы уверены, что хотите удалить <span id="deleteItemType"></span>
+                            "<span id="deleteItemName"></span>"?</p>
+                        <p class="text-danger">Это действие необратимо.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                        <button type="submit" class="btn btn-danger">Удалить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 
     <!-- Модальное окно "Создать папку" -->
@@ -234,6 +265,7 @@
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
                             <button type="button" id="submitCreateFolderBtn" class="btn btn-primary">Создать</button>
                         </div>
+                    </div>
                 </form>
             </div>
         </div>
@@ -261,32 +293,6 @@
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
                         <button type="submit" class="btn btn-primary">Переименовать</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <!-- Модальное окно "Удалить" -->
-    <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <form method="post" action="{% url 'file_storage:delete_item' %}">
-                    {# Замените 'delete_item' на ваш URL #}
-                    {% csrf_token %}
-                    <input type="hidden" name="item_id" id="deleteItemId">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="deleteModalLabel">Подтверждение удаления</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body">
-                        <p>Вы уверены, что хотите удалить <strong id="deleteItemType"></strong> "<strong
-                                id="deleteItemName"></strong>"?</p>
-                        <p class="text-danger">Это действие необратимо.</p>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                        <button type="submit" class="btn btn-danger">Удалить</button>
                     </div>
                 </form>
             </div>
@@ -327,23 +333,21 @@
 
 {% block extra_js %}
     <script>
-        // Передаем URL для AJAX загрузки в JavaScript
-        window.UPLOAD_URL = "{% url 'file_storage:upload_file_ajax' %}"; // Убедитесь, что 'upload_file_ajax' - правильное имя URL
-        // Также передадим URL для file_list для перезагрузки на нужную директорию
+        window.UPLOAD_URL = "{% url 'file_storage:upload_file_ajax' %}";
         window.CURRENT_LIST_URL = "{% url 'file_storage:list_files' %}{% if current_path_unencoded %}?path={{ current_path_unencoded|urlencode }}{% endif %}";
     </script>
     <script src="{% static 'js/file_storage.js' %}"></script>
+    <script src="{% static 'js/create_directory.js' %}"></script>
+    <script src="{% static 'js/folder_uploader.js' %}" defer></script>
     <script>
         // Инициализация всплывающих подсказок Bootstrap (если есть) и Toast
         document.addEventListener('DOMContentLoaded', function () {
             var toastElList = [].slice.call(document.querySelectorAll('.toast'))
             var toastList = toastElList.map(function (toastEl) {
-                // Убедимся, что инициализируем только если еще не инициализирован
                 return bootstrap.Toast.getInstance(toastEl) || new bootstrap.Toast(toastEl)
             });
             toastList.forEach(toast => toast.show()); // Показать все сообщения
         });
     </script>
-    <script src="{% static 'js/create_directory.js' %}"></script>
-    <script src="{% static 'js/folder_uploader.js' %}" defer></script>
+
 {% endblock %}

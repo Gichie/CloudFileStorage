@@ -31,3 +31,30 @@
 .toast-body {
     word-break: break-word;
 }
+
+.card-body .table-responsive {
+    width: 100%;
+}
+
+.card-body .table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+/* Для текста в ячейках, чтобы он не выходил за границы */
+.card-body .table td, .card-body .table th {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Для колонки "Путь", чтобы она адаптировалась */
+.text-truncate {
+    max-width: 100%;
+}
+
+.card-body .table .btn {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
