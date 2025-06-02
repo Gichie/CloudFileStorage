@@ -81,10 +81,5 @@ class UserFile(models.Model):
     def get_path_for_url(self):
         if not self.is_directory():
             return ""
-        path_parts = []
-        current = self
-        while current:
-            path_parts.insert(0, current.name)
-            current = current.parent
-
-        return urllib.parse.quote_plus("/".join(path_parts))
+        if self.path:
+            return urllib.parse.quote_plus(self.get_display_path[:-1])

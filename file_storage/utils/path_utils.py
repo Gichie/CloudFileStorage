@@ -2,8 +2,9 @@ import logging
 import urllib
 
 from django.http import Http404
+from django.urls import reverse
 
-from file_storage.models import UserFile, FileType
+from file_storage.models import UserFile
 
 logger = logging.getLogger(__name__)
 
@@ -44,3 +45,8 @@ def parse_directory_path(user, path_param_encoded):
                     raise Http404("Ошибка при поиске директории (найдено несколько объектов).")
 
     return current_directory, unquoted_path
+
+
+def encodes_path_for_url(unencoded_path):
+    encoded_path = urllib.parse.quote_plus(unencoded_path)
+    return f"{reverse('file_storage:list_files')}?path={encoded_path}"

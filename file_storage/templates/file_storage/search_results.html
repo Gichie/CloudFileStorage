@@ -10,7 +10,7 @@
 
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <a href="{% url 'file_storage:list_files' %}" class="btn btn-sm btn-outline-secondary">
+                        <a href="{{ encoded_path }}" class="btn btn-sm btn-outline-secondary">
                             <i class="bi bi-arrow-left"></i> Вернуться к файлам
                         </a>
                     </div>
@@ -23,7 +23,7 @@
                                         <th scope="col" style="width: 5%;">Тип</th>
                                         <th scope="col" style="width: 20%;">Имя</th>
                                         <th scope="col">Путь</th>
-                                        <th scope="col" style="width: 13%;">Действия</th>
+                                        <th scope="col" style="width: 13%;" class="text-center">Действия</th>
                                     </tr>
                                     </thead>
 

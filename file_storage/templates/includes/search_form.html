@@ -1,10 +1,10 @@
 <div class="card mb-4 search-form-container">
     <div class="card-body">
-        <form method="GET" action="{% url 'file_storage:search_files' %}" class="search-form">
+        <form method="GET" action="{% url 'file_storage:search_files' %}">
             <div class="input-group">
                 <input type="text" name="query" class="form-control" placeholder="Поиск файлов и папок..."
                        value="{{ request.GET.query|default:'' }}" aria-label="Поиск" required>
-
+                <input type="hidden" name="current_path_unencoded" value="{{ current_path_unencoded }}">
                 <div class="input-group-append">
                     <button class="btn btn-primary" type="submit">
                         <i class="bi bi-search"></i> Поиск

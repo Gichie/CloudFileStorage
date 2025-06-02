@@ -18,6 +18,7 @@ from file_storage.utils import ui, path_utils, directory_utils, file_upload_util
 from file_storage.utils.archive_service import ZipStreamGenerator
 from file_storage.utils.file_upload_utils import get_message_and_status
 from file_storage.utils.minio import minio_storage
+from file_storage.utils.path_utils import encodes_path_for_url
 
 logger = logging.getLogger(__name__)
 
@@ -259,15 +260,21 @@ class FileSearchView(LoginRequiredMixin, View):
 
     def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
         context = {}
+
         query = request.GET.get('query', None)
-        context['query'] = query
+        unencoded_path = request.GET.get('current_path_unencoded', '')
+        encoded_path = encodes_path_for_url(unencoded_path)
+
         if query:
             search_results = UserFile.objects.filter(
                 user=request.user, name__icontains=query
             ).order_by('object_type', 'name')
         else:
             search_results = None
+
         context['search_results'] = search_results
+        context['query'] = query
+        context['encoded_path'] = encoded_path
 
         return render(request, self.template_name, context)
 
