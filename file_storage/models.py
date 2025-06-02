@@ -20,9 +20,11 @@ class UserFile(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='files')
     file = models.FileField(upload_to=user_directory_path, null=True, blank=True, max_length=500)
-    path = models.CharField(max_length=500, null=True, blank=True, db_index=True)
+    path = models.CharField(max_length=500, null=True, blank=True)
     name = models.CharField(max_length=255)
-    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE, related_name='children')
+    parent = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.CASCADE, related_name='children', db_index=True
+    )
     object_type = models.CharField(max_length=10, choices=FileType.choices, default=FileType.FILE)
     file_size = models.PositiveBigIntegerField(null=True, blank=True)
     content_type = models.CharField(max_length=100, null=True, blank=True)
@@ -68,12 +70,6 @@ class UserFile(models.Model):
     def update_children_paths(self):
         for child in self.children.all():
             child.save()
-
-    def get_s3_key_for_file_content(self):
-        # Возвращает ключ, по которому FileField хранит содержимое файла
-        if not self.is_directory() and self.file:
-            return self.file.name
-        return None
 
     def get_s3_key_for_directory_marker(self):
         # Возвращает ключ для объекта-маркера папки в S3 (если используется)

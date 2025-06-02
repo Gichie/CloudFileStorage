@@ -162,6 +162,8 @@
                                     <i class="bi bi-file-earmark fs-4 text-primary"></i>
                                 {% endif %}
                             </td>
+
+                            <!-- Колонка Имя -->
                             <td>
                                 {% if item.is_directory %}
                                     <a href="{% url 'file_storage:list_files' %}?path={{ item.get_path_for_url }}"
@@ -170,6 +172,7 @@
                                     {{ item.name }}
                                 {% endif %}
                             </td>
+
                             <td>{% if not item.is_directory and item.file_size is not None %}
                                 {{ item.file_size|filesizeformat }}{% else %}—{% endif %}</td>
                             <td>{{ item.last_modified|date:"d.m.Y H:i" }}</td>

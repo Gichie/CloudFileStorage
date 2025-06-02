@@ -21,10 +21,13 @@ from file_storage.utils.minio import minio_storage
 
 logger = logging.getLogger(__name__)
 
+FILE_STORAGE_LIST_FILES_URL = 'file_storage:list_files'
+FILE_LIST_TEMPLATE = 'file_storage/list_files.html'
+
 
 class FileListView(LoginRequiredMixin, ListView):
     model = UserFile
-    template_name = 'file_storage/list_files.html'
+    template_name = FILE_LIST_TEMPLATE
     context_object_name = 'items'
 
     def setup(self, request, *args, **kwargs):
@@ -33,7 +36,8 @@ class FileListView(LoginRequiredMixin, ListView):
         path_param_encoded = self.request.GET.get('path')
 
         self.current_directory, self.current_path_unencoded = path_utils.parse_directory_path(self.user,
-                                                                                              path_param_encoded)
+                                                                                              path_param_encoded
+                                                                                              )
 
     def get_queryset(self):
         if self.current_directory:
@@ -53,11 +57,11 @@ class FileListView(LoginRequiredMixin, ListView):
         context['current_directory'] = self.current_directory
         context['current_path_unencoded'] = self.current_path_unencoded
 
-        context['breadcrumbs'] = ui.generate_breadcrumbs(self.current_directory, self.current_path_unencoded)
+        context['breadcrumbs'] = ui.generate_breadcrumbs(self.current_path_unencoded)
 
         # Формирование URL для кнопки "Назад"
         context['parent_level_url'] = ui.get_parent_url(
-            self.current_directory, 'file_storage:list_files'
+            self.current_path_unencoded, FILE_STORAGE_LIST_FILES_URL
         )
 
         context['current_folder_id'] = self.current_directory.id if self.current_directory else None
