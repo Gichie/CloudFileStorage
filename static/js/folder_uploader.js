@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Элементы для отображения прогресса загрузки папки
     const folderUploadProgressContainer = document.getElementById('folderUploadProgressContainer');
     const folderProgressBar = document.getElementById('folderProgressBar');
-    const folderProgressCounter = document.getElementById('folderProgressCounter');
+    //const folderProgressCounter = document.getElementById('folderProgressCounter');
     const currentFileUploading = document.getElementById('currentFileUploading');
     const folderUploadErrorsContainer = document.getElementById('folderUploadErrorsContainer');
     const clearFolderUploadErrorsBtn = document.getElementById('clearFolderUploadErrorsBtn');
@@ -40,8 +40,8 @@ document.addEventListener('DOMContentLoaded', function () {
             folderProgressBar.classList.remove('bg-success', 'bg-danger', 'bg-warning');
             folderProgressBar.classList.add('progress-bar-animated'); // Восстанавливаем анимацию
         }
-        if (folderProgressCounter) folderProgressCounter.textContent = `0/${totalFilesCount} файлов`;
-        if (currentFileUploading) currentFileUploading.textContent = 'Подготовка...';
+        //if (folderProgressCounter) folderProgressCounter.textContent = `0/${totalFilesCount} файлов`;
+        if (currentFileUploading) currentFileUploading.textContent = 'Загрузка...';
         if (folderUploadErrorList) folderUploadErrorList.innerHTML = '';
         if (folderUploadErrorsContainer) folderUploadErrorsContainer.style.display = 'none';
         if (uploadFinalStatusMessageContainer) uploadFinalStatusMessageContainer.innerHTML = '';
@@ -53,9 +53,9 @@ document.addEventListener('DOMContentLoaded', function () {
             folderProgressBar.style.width = percentage + '%';
             folderProgressBar.textContent = percentage + '%';
         }
-        if (folderProgressCounter) {
+        /* if (folderProgressCounter) {
             folderProgressCounter.textContent = `${processed}/${total} файлов (Успешно: ${successful})`;
-        }
+        } */
         if (currentFileUploading) {
             currentFileUploading.textContent = currentFileName ? `Загрузка: ${currentFileName}` : (processed === total ? "Завершение..." : "Ожидание...");
         }
@@ -95,110 +95,176 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function handleFolderUpload(event) {
-        const files = event.target.files;
+        const files = Array.from(event.target.files);
         const parentId = getCurrentFolderId();
-        const csrfToken = getCsrfToken();
+
+        const MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024; // 500 МБ (должно совпадать с лимитом Nginx)
+        let totalSize = 0;
+        for (const file of files) {
+            totalSize += file.size;
+        }
+
+        if (totalSize > MAX_UPLOAD_SIZE_BYTES) {
+            // Показываем ошибку МГНОВЕННО, до отправки запроса
+            showFinalStatusMessage(
+                `Ошибка: Общий размер папки (${(totalSize / 1024 / 1024).toFixed(2)} МБ) превышает лимит в 500 МБ.`,
+                true
+            );
+            event.target.value = null; // Сбрасываем инпут
+            return; // Прерываем выполнение функции
+        }
+
+        const csrfToken = getCsrfToken(); // Убедись, что эта функция возвращает токен
+        const uploadUrl = window.UPLOAD_URL; // Убедись, что эта переменная определена
 
         const totalFiles = files.length;
         resetFolderUploadUI(totalFiles);
 
+        // --- Блок начальных проверок ---
         if (!totalFiles) {
             showFinalStatusMessage('Папка не выбрана или пуста.', true);
             if (folderUploadProgressContainer) folderUploadProgressContainer.style.display = 'none';
             return;
         }
-        if (!csrfToken) {
-            showFinalStatusMessage('Ошибка: Не удалось получить CSRF токен. Загрузка невозможна.', true);
+        if (!csrfToken || !uploadUrl) {
+            const errorMessage = !csrfToken ? 'Ошибка: Не удалось получить CSRF токен.' : 'Ошибка: URL для загрузки не определен.';
+            showFinalStatusMessage(errorMessage, true);
             if (folderUploadProgressContainer) folderUploadProgressContainer.style.display = 'none';
             return;
         }
 
-        updateFolderUploadProgress(0, totalFiles, 0, files.length > 0 ? (files[0].webkitRelativePath || files[0].name) : "Подготовка...");
+        // --- Создание общего FormData ---
+        const formData = new FormData();
+        files.forEach(file => {
+            formData.append('files', file);
+            formData.append('relative_paths', file.webkitRelativePath);
+        });
+        if (parentId) {
+            formData.append('parent_id', parentId);
+        }
 
+        function uploadWithXHR(url, data) {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', url, true);
 
-        let successfulUploads = 0;
-        let failedUploads = 0;
-        let processedFiles = 0;
+                // Django при использовании AJAX с XHR ожидает CSRF-токен в заголовке.
+                xhr.setRequestHeader('X-CSRFToken', csrfToken);
 
-        for (const file of files) {
-            const displayName = file.webkitRelativePath || file.name;
-            // Обновляем прогресс перед каждой загрузкой
-            updateFolderUploadProgress(processedFiles, totalFiles, successfulUploads, displayName);
+                // Обработчик, который срабатывает ПОСЛЕ завершения запроса (успешного или нет).
+                xhr.onload = function () {
+                    // Этот блок сработает для любого HTTP-статуса, включая 413.
+                    if (xhr.status === 413) {
+                        // Nginx вернул ошибку "Request Entity Too Large".
+                        // Отклоняем промис с кастомным объектом ошибки.
+                        reject({
+                            isNginxLimitError: true,
+                            message: 'Ошибка: Папка слишком большая. Превышен лимит на сервере.'
+                        });
+                        return;
+                    }
 
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('relative_path', file.webkitRelativePath);
-            if (parentId) formData.append('parent_id', parentId);
-            formData.append('csrfmiddlewaretoken', csrfToken);
-
-            const uploadUrl = window.UPLOAD_URL;
-            if (!uploadUrl) {
-                addFolderUploadError(displayName, 'URL для загрузки не определен.');
-                failedUploads++;
-                // processedFiles инкрементируется ниже, после блока try/catch
-            } else {
-                try {
-                    const response = await fetch(uploadUrl, {method: 'POST', body: formData});
-                    const responseData = await response.json();
-
-                    if (response.ok) {
-                        if (responseData.results && responseData.results.length > 0) {
-                            const fileResult = responseData.results[0];
-                            if (fileResult.status === 'success') {
-                                successfulUploads++;
-                            } else {
-                                failedUploads++;
-                                addFolderUploadError(displayName, fileResult.error || 'Неизвестная ошибка обработки файла.');
+                    // Для всех остальных случаев, разрешаем промис с объектом,
+                    // имитирующим ответ от fetch.
+                    resolve({
+                        ok: xhr.status >= 200 && xhr.status < 300,
+                        status: xhr.status,
+                        // Добавляем функцию, чтобы парсить JSON, как в fetch.
+                        json: () => {
+                            try {
+                                return JSON.parse(xhr.responseText);
+                            } catch (e) {
+                                return {error: "Не удалось разобрать ответ сервера."};
                             }
-                        } else {
-                            failedUploads++;
-                            addFolderUploadError(displayName, responseData.message || 'Ответ сервера не содержит результатов по файлу.');
                         }
+                    });
+                };
+
+                // Обработчик, который срабатывает только при РЕАЛЬНЫХ сетевых сбоях.
+                // (например, нет сети, или сервер принудительно разорвал соединение).
+                // Ошибка 413 от Nginx часто попадает именно сюда.
+                xhr.onerror = function () {
+                    reject({
+                        isNetworkError: true,
+                        message: 'Ошибка сети или сервер разорвал соединение. Возможно, папка слишком большая.'
+                    });
+                };
+
+                // Опционально: можно показывать реальный прогресс загрузки.
+                xhr.upload.onprogress = function (e) {
+                    if (e.lengthComputable) {
+                        const percentage = Math.round((e.loaded / e.total) * 100);
+                        // Здесь можно обновлять UI, показывая реальный процент загрузки
+                        if (folderProgressBar) {
+                            folderProgressBar.style.width = percentage + '%';
+                            folderProgressBar.textContent = `Загрузка: ${percentage}%`;
+                        }
+                    }
+                };
+
+                xhr.send(data);
+            });
+        }
+
+        // --- Основной блок Try/Catch для обработки загрузки ---
+        try {
+            const response = await uploadWithXHR(uploadUrl, formData);
+
+            if (!response.ok) {
+                const errorData = response.json();
+                const serverErrorMsg = errorData?.error || errorData?.detail || `HTTP ошибка ${response.status}`;
+                showFinalStatusMessage(`Ошибка сервера: ${serverErrorMsg}`, true);
+                return;
+            }
+
+            const responseData = response.json();
+            let successfulUploads = 0;
+            let failedUploads = 0;
+
+            if (Array.isArray(responseData.results)) {
+                responseData.results.forEach(fileResult => {
+                    if (fileResult.status === 'success') {
+                        successfulUploads++;
                     } else {
                         failedUploads++;
-                        const serverErrorMsg = responseData.error || responseData.detail || responseData.message || `HTTP ошибка ${response.status}`;
-                        addFolderUploadError(displayName, `Ошибка сервера (${response.status}): ${serverErrorMsg}`);
+                        addFolderUploadError(fileResult.name, fileResult.error || 'Неизвестная ошибка.');
                     }
-                } catch (error) {
-                    console.error('Сетевая/неожиданная ошибка при загрузке:', displayName, error);
-                    failedUploads++;
-                    addFolderUploadError(displayName, 'Сетевая ошибка или ошибка ответа. См. консоль.');
-                }
+                });
+            } else {
+                showFinalStatusMessage('Ответ сервера не содержит корректных результатов по файлам.', true);
+                return;
             }
-            processedFiles++;
-        }
-        // Обновляем прогресс после завершения цикла (когда все файлы обработаны)
-        updateFolderUploadProgress(processedFiles, totalFiles, successfulUploads, "Завершено.");
 
-        event.target.value = null; // Сброс инпута
+            updateFolderUploadProgress(totalFiles, totalFiles, successfulUploads, "Завершено.");
 
-        let finalMessageText;
-        let finalIsError = false;
-        let finalIsWarning = false;
+            if (failedUploads === 0) {
+                showFinalStatusMessage('Все файлы из папки успешно загружены!');
+                setTimeout(() => {
+                    if (window.CURRENT_LIST_URL) window.location.href = window.CURRENT_LIST_URL;
+                    else window.location.reload();
+                }, 1500);
+            } else {
+                showFinalStatusMessage(
+                    `Загрузка папки завершена. Успешно: ${successfulUploads} из ${totalFiles}. Ошибок: ${failedUploads}.`,
+                    true
+                );
+            }
 
-        if (failedUploads === 0 && successfulUploads === totalFiles && totalFiles > 0) {
-            finalMessageText = 'Все файлы из папки успешно загружены!';
-            setTimeout(() => {
-                if (window.CURRENT_LIST_URL) window.location.href = window.CURRENT_LIST_URL;
-                else window.location.reload();
-            }, 1500);
-        } else if (failedUploads > 0) {
-            finalMessageText = `Загрузка папки завершена. Успешно: ${successfulUploads} из ${totalFiles}. Ошибок: ${failedUploads}.`;
-            finalIsError = true;
-        } else if (successfulUploads > 0 && successfulUploads < totalFiles) {
-            finalMessageText = `Загрузка папки завершена. Успешно: ${successfulUploads} из ${totalFiles}. Не все файлы были обработаны.`;
-            finalIsWarning = true;
-        } else if (totalFiles > 0) {
-            finalMessageText = `Загрузка папки завершена. Успешно: ${successfulUploads} из ${totalFiles}. Проверьте ошибки выше.`;
-            finalIsWarning = true;
-        }
-
-        if (finalMessageText) {
-            showFinalStatusMessage(finalMessageText, finalIsError, finalIsWarning);
+        } catch (error) {
+            // Ловим наши кастомные ошибки из промиса
+            if (error.isNginxLimitError || error.isNetworkError) {
+                showFinalStatusMessage(error.message, true);
+            } else {
+                // Ловим все остальные непредвиденные ошибки
+                console.error('Непредвиденная ошибка при загрузке:', error);
+                showFinalStatusMessage('Произошла непредвиденная ошибка. См. консоль.', true);
+            }
+        } finally {
+            event.target.value = null; // Сброс инпута в любом случае
         }
     }
 
-    // --- Привязка обработчиков событий ---
+// --- Привязка обработчиков событий ---
     if (uploadFolderButton && folderInputElement) {
         uploadFolderButton.addEventListener('click', () => folderInputElement.click());
         folderInputElement.addEventListener('change', handleFolderUpload);
@@ -207,7 +273,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!folderInputElement) console.warn('Элемент input для выбора папки (folder_input_element) не найден.');
     }
 
-    // Обработчик для кнопки очистки ошибок и всего блока прогресса
+// Обработчик для кнопки очистки ошибок и всего блока прогресса
     if (clearFolderUploadErrorsBtn) {
         clearFolderUploadErrorsBtn.addEventListener('click', function () {
             // 1. Очищаем и скрываем список ошибок
@@ -238,4 +304,5 @@ document.addEventListener('DOMContentLoaded', function () {
     } else {
         console.warn('Кнопка очистки ошибок (clearFolderUploadErrorsBtn) не найдена.');
     }
-});
+})
+;

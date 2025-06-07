@@ -11,14 +11,16 @@ from django.views import View
 from django.views.generic import ListView
 
 from cloud_file_storage import settings
-from file_storage.exceptions import NameConflictError
+from file_storage.exceptions import StorageError
 from file_storage.forms import FileUploadForm, DirectoryCreationForm
 from file_storage.models import UserFile, FileType
-from file_storage.utils import ui, path_utils, directory_utils, file_upload_utils
-from file_storage.utils.archive_service import ZipStreamGenerator
-from file_storage.utils.file_upload_utils import get_message_and_status
-from file_storage.utils.minio import minio_storage
-from file_storage.utils.path_utils import encodes_path_for_url
+from file_storage.services import directory_service, upload_service
+from file_storage.services.archive_service import ZipStreamGenerator
+from file_storage.services.upload_service import get_message_and_status
+from file_storage.storage.minio import minio_storage
+from file_storage.utils import ui, file_utils
+from file_storage.utils.file_utils import get_all_files
+from file_storage.utils.path_utils import encode_path_for_url
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +35,10 @@ class FileListView(LoginRequiredMixin, ListView):
 
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
-        self.user = self.request.user
-        path_param_encoded = self.request.GET.get('path')
-
-        self.current_directory, self.current_path_unencoded = path_utils.parse_directory_path(self.user,
-                                                                                              path_param_encoded
-                                                                                              )
+        self.user = request.user
+        self.current_path_unencoded = request.GET.get('path')
+        self.current_directory = directory_service.get_current_directory_from_path(self.user,
+                                                                                   self.current_path_unencoded)
 
     def get_queryset(self):
         if self.current_directory:
@@ -77,26 +77,26 @@ class FileListView(LoginRequiredMixin, ListView):
         form = DirectoryCreationForm(request.POST, user=request.user)
         if form.is_valid():
             parent_pk = request.POST.get('parent')
-            parent_object = None
+            parent_object_or_response = None
 
             if parent_pk:
-                parent_object = directory_utils.get_parent_directory(self.user, parent_pk)
-                if isinstance(parent_object, JsonResponse):
-                    return parent_object
+                parent_object_or_response = directory_service.get_parent_directory_or_json_response(self.user, parent_pk)
+                if isinstance(parent_object_or_response, JsonResponse):
+                    return parent_object_or_response
 
             directory_name = form.cleaned_data['name']
 
-            if directory_utils.directory_exists(self.user, directory_name, parent_object):
+            if directory_service.directory_exists(self.user, directory_name, parent_object_or_response):
                 logger.warning(
                     f"User {request.user.username}: Directory: {directory_name} "
-                    f"already exists in parent '{parent_object.name if parent_object else 'root'}'."
+                    f"already exists in parent '{parent_object_or_response.name if parent_object_or_response else 'root'}'."
                 )
                 return JsonResponse({
                     'status': 'error',
                     'message': f"Файл или папка с именем '{directory_name}' уже существует в текущей директории."
                 }, status=400)
 
-            result = minio_storage.create_directory(self.user, directory_name, parent_object)
+            result = minio_storage.create_directory(self.user, directory_name, parent_object_or_response)
 
             if result['success']:
                 return JsonResponse({
@@ -127,53 +127,46 @@ class FileListView(LoginRequiredMixin, ListView):
 
 class FileUploadAjaxView(LoginRequiredMixin, View):
     def post(self, request, *args, **kwargs):
-        files = request.FILES.getlist('files') or request.FILES.getlist('file')
-        relative_path = request.POST.get('relative_path')
+        relative_paths = request.POST.getlist('relative_paths')
         parent_id = request.POST.get('parent_id')
+        files = request.FILES.getlist('files')
         user = request.user
 
+        parent_object_or_json = directory_service.get_parent_directory_or_json_response(user, parent_id)
+        if isinstance(parent_object_or_json, JsonResponse):
+            return parent_object_or_json
+
+        if relative_paths:
+            if len(files) != len(relative_paths):
+                logger.error(f"{self.__class__.__name__} User: '{user}'. Количество файлов и путей не совпадает.")
+                return JsonResponse({'error': 'Данные о путях файлов некорректны.'}, status=400)
+        else:
+            relative_paths = [None for i in range(len(files))]
+
         logger.info(
-            f"{self.__class__.__name__}: User '{user.username}' ID: {user.id} initiated file upload. "
-            f"Target parent_id: '{parent_id}'."
+            f"{self.__class__.__name__}: User '{user.username}' ID: {user.id} initiated files upload. "
+            f"Target parent_id: '{parent_id}'. Files: {relative_paths}"
         )
 
         if not files:
-            logger.warning(f"User '{user.username}': File upload request received without files.")
+            logger.warning(f"User: '{user.username}': File upload request received without files.")
             return JsonResponse({'error': 'Файл отсутствует'}, status=400)
 
-        parent_object = directory_utils.get_parent_directory(user, parent_id)
-        if isinstance(parent_object, JsonResponse):
-            return parent_object
-
         results = []
-        for uploaded_file in files:
-            form_data = {'parent': parent_object.pk if parent_object else None}
+        cache = {}
+        for uploaded_file, rel_path in zip(files, relative_paths):
+            form_data = {'parent': parent_object_or_json.pk if parent_object_or_json else None}
             form_files = {'file': uploaded_file}
             form = FileUploadForm(form_data, form_files, user=user)
 
             if form.is_valid():
-                try:
-                    result = file_upload_utils.handle_file_upload(
-                        uploaded_file, user, parent_object, relative_path
-                    )
-                    results.append(result)
-                except NameConflictError as e:
-                    results.append({
-                        'name': e.name,
-                        'status': 'error',
-                        'error': e.get_message(),
-                    })
-                except Exception as e:
-                    logger.critical(
-                        f"User '{user.username}': Critical unhandled error in _handle_file_upload "
-                        f"for file '{uploaded_file.name}': {e}",
-                        exc_info=True
-                    )
-                    results.append({
-                        'name': uploaded_file.name,
-                        'status': 'error',
-                        'error': 'Внутренняя ошибка сервера при загрузке файла',
-                    })
+                result = upload_service.handle_file_upload(
+                    uploaded_file, user, parent_object_or_json, rel_path, cache
+                )
+                results.append(result)
+                if 'error' in result:
+                    break
+
             else:
                 error_messages = []
                 for field, errors in form.errors.items():
@@ -229,30 +222,42 @@ class DownloadFileView(LoginRequiredMixin, View):
 
 class DownloadDirectoryView(LoginRequiredMixin, View):
     def get(self, request, directory_id):
+        user = request.user
         directory = get_object_or_404(
-            UserFile, id=directory_id, user=request.user, object_type=FileType.DIRECTORY
+            UserFile, id=directory_id, user=user, object_type=FileType.DIRECTORY
         )
+
+        all_files = get_all_files(directory, user)
+
+        if not minio_storage.check_files_exist(all_files):
+            messages.error(request, "Не удалось прочитать некоторые файлы из хранилища")
+            return redirect(FILE_STORAGE_LIST_FILES_URL)
+
+        zip_generator = ZipStreamGenerator(directory, all_files)
+
+        zip_filename = f"{directory.name}.zip"
+        encoded_zip_filename = urllib.parse.quote(zip_filename)
+
         try:
-            zip_generator = ZipStreamGenerator(directory)
-
-            zip_filename = f"{directory.name}.zip"
-            encoded_zip_filename = urllib.parse.quote(zip_filename)
-
             response = StreamingHttpResponse(
                 zip_generator.generate(), content_type='application/zip'
             )
-
-            response['Content-Disposition'] = f'attachment; filename="{encoded_zip_filename}"'
-            response['Cache-Control'] = 'no-cache'
-
-            logger.info(f"User '{request.user.username}' started "
-                        f"downloading directory '{directory.name}' "
-                        f"as '{zip_filename}'.")
-            return response
+        except StorageError as e:
+            # Логирование внутри _check_files_exist
+            messages.error(request, "Не удалось прочитать некоторые файлы из хранилища")
+            return redirect(FILE_STORAGE_LIST_FILES_URL)
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
-            messages.error(request, "Произошла ошибка при подготовке архива, попробуйте позже")
-            return redirect(f'file_storage:list_files')
+            messages.error(request, 'Произошла ошибка при скачивании архива')
+            return redirect(FILE_STORAGE_LIST_FILES_URL)
+
+        response['Content-Disposition'] = f'attachment; filename="{encoded_zip_filename}"'
+        response['Cache-Control'] = 'no-cache'
+
+        logger.info(f"User '{request.user.username}' started "
+                    f"downloading directory '{directory.name}' "
+                    f"as '{zip_filename}'.")
+        return response
 
 
 class FileSearchView(LoginRequiredMixin, View):
@@ -263,7 +268,7 @@ class FileSearchView(LoginRequiredMixin, View):
 
         query = request.GET.get('query', None)
         unencoded_path = request.GET.get('current_path_unencoded', '')
-        encoded_path = encodes_path_for_url(unencoded_path)
+        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
 
         if query:
             search_results = UserFile.objects.filter(

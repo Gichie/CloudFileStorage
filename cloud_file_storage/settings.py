@@ -23,7 +23,7 @@ LOGGING = {
             'level': 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOGGING_DIR / 'logs.log',
-            'maxBytes': 5 * 1024 * 1024,
+            'maxBytes': 4 * 1024 * 1024,
             'backupCount': 2,
             'encoding': 'utf-8',
             'formatter': 'verbose',
@@ -96,7 +96,10 @@ AWS_DEFAULT_ACL = None  # Или 'public-read' если файлы должны 
 AWS_QUERYSTRING_AUTH = False  # Отключает параметры аутентификации в URL
 
 # Максимальный размер загружаемого файла, хранящегося в оперативной памяти (50 МБ)
-FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
+# Максимальный размер тела запроса (в байтах). Должен быть согласован с Nginx.
+# Django по умолчанию 2.5 МБ.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024  # 500 MB
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -164,8 +167,6 @@ AUTHENTICATION_BACKENDS = [
     'users.authentication.EmailAuthBackend',
 ]
 
-STATIC_URL = 'static/'
-
 LANGUAGE_CODE = 'ru-RU'
 
 TIME_ZONE = 'Europe/Moscow'
@@ -174,11 +175,13 @@ USE_I18N = True
 
 USE_TZ = True
 
+STATIC_URL = 'static/'
+
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ]
 
-# STATIC_ROOT = BASE_DIR / 'staticfiles' # for docker
+STATIC_ROOT = BASE_DIR / 'static_collected' # for docker
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

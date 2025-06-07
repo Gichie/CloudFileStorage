@@ -20,3 +20,7 @@ class NameConflictError(Exception):
         parent_message = f"в папке '{self.parent_name}'" if self.parent_name else "в текущей диретории"
 
         return f"Файл или папка с таким именем уже существует {parent_message}"
+
+
+class StorageError(Exception):
+    pass

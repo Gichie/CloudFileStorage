@@ -6,7 +6,8 @@ from django import forms
 from file_storage.models import UserFile, FileType
 
 INVALID_CHARS_PATTERN = re.compile(r'[\/\\<>:"|?*]')
-MAX_FILE_SIZE = 200 * 1024 * 1024  # 200 МБ
+MAX_FILE_SIZE = 500 * 1024 * 1024  # 200 МБ
+
 
 class FileUploadForm(forms.ModelForm):
     class Meta:
@@ -35,7 +36,7 @@ class FileUploadForm(forms.ModelForm):
             if not self.cleaned_data.get('name'):
                 self.cleaned_data['name'] = os.path.basename(file.name)
             if file.size > MAX_FILE_SIZE:
-                raise forms.ValidationError("Файл слишком большой. Максимальный размер - 200 МБ.")
+                raise forms.ValidationError(f"Файл слишком большой. Максимальный размер - {MAX_FILE_SIZE} МБ.")
             return file
         else:
             raise forms.ValidationError("Файл отсутствует или его не удалось прочитать.")

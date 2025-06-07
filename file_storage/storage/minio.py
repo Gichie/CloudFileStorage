@@ -117,5 +117,20 @@ class MinioStorage:
                 'status': 500
             }
 
+    def check_files_exist(self, files):
+        for file in files:
+            if file.object_type == FileType.FILE:
+                try:
+                    s3_key = file.file.name
+                    self.s3_client.head_object(
+                        Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+                        Key=s3_key,
+                    )
+
+                except ClientError as e:
+                    logger.error(f"Не удалось получить метаданные файла {s3_key}: {e}")
+                    return False
+        return True
+
 
 minio_storage = MinioStorage()
