@@ -1,17 +1,17 @@
 import logging
 
 from botocore.exceptions import NoCredentialsError, ClientError, BotoCoreError
-from django.http import JsonResponse, Http404
+from django.http import Http404
 
 from cloud_file_storage import settings
-from file_storage.exceptions import NameConflictError, StorageError
+from file_storage.exceptions import NameConflictError, StorageError, ParentDirectoryNotFoundError, InvalidParentIdError
 from file_storage.models import UserFile, FileType, User
 from file_storage.storage.minio import minio_storage
 
 logger = logging.getLogger(__name__)
 
 
-def get_parent_directory_or_json_response(user, parent_pk):
+def get_parent_directory(user, parent_pk):
     """
     Получает родительскую директорию по ID с проверкой прав доступа
     """
@@ -22,7 +22,6 @@ def get_parent_directory_or_json_response(user, parent_pk):
                 user=user,
                 object_type=FileType.DIRECTORY,
             )
-
             logger.info(
                 f"[{__name__}] User '{user.username}' "
                 f"successfully identified parent directory: '{parent_object.name}' "
@@ -33,22 +32,19 @@ def get_parent_directory_or_json_response(user, parent_pk):
         except UserFile.DoesNotExist:
             logger.warning(
                 f"Parent directory not found. pk={parent_pk} user={user.username} ID: {user.id} "
-                f"Requested parent_pk: '{parent_pk}'. Query was for object_type: {FileType.DIRECTORY}"
+                f"Requested parent_pk: '{parent_pk}'. Query was for object_type: {FileType.DIRECTORY}",
+                exc_info=True
             )
-            return JsonResponse(
-                {'status': 'error', 'message': 'Родительская папка не найдена'},
-                status=400,
-            )
+            raise ParentDirectoryNotFoundError
+
         except (ValueError, TypeError):
             logger.error(
                 f"User={user.username} ID: {user.id} "
                 f"object_type={FileType.DIRECTORY} Invalid parent folder identifier. pk={parent_pk}",
                 exc_info=True
             )
-            return JsonResponse(
-                {'status': 'error', 'message': 'Некорректный идентификатор родительской папки.'},
-                status=400
-            )
+            raise InvalidParentIdError
+
     return None
 
 
@@ -70,17 +66,6 @@ def create_directories_from_path(user, parent_object, path_components):
     current_parent = parent_object
 
     for directory_name in path_components:
-        if UserFile.objects.filter(
-                user=user,
-                name=directory_name,
-                parent=current_parent,
-                object_type=FileType.FILE
-        ).exists():
-            message = (f"Upload failed. File with this name already exists. User: {user}. "
-                       f"Name: {directory_name}, parent: {current_parent}")
-            logger.warning(message)
-            raise NameConflictError(message, directory_name, current_parent)
-
         directory_object, created = UserFile.objects.get_or_create(
             user=user,
             name=directory_name,

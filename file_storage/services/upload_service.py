@@ -15,7 +15,7 @@ def handle_file_upload(uploaded_file, user, parent_object, relative_path, cache)
     Возвращает словарь с результатом.
     """
     uploaded_file_name = uploaded_file.name
-
+    dir_path = None
     log_prefix = (f"User '{user.username}' (ID: {user.id}), File '{uploaded_file_name}', "
                   f"Parent ID: {parent_object.id if parent_object else 'None'}, relative_path: {relative_path}")
 
@@ -35,11 +35,9 @@ def handle_file_upload(uploaded_file, user, parent_object, relative_path, cache)
 
         if dir_path not in cache:
             try:
-                with transaction.atomic():
-                    parent_object = directory_service.create_directories_from_path(
-                        user, parent_object, directory_path_parts
-                    )
-                    cache[dir_path] = parent_object
+                parent_object = directory_service.create_directories_from_path(
+                    user, parent_object, directory_path_parts
+                )
 
             except NameConflictError as e:
                 return {
@@ -71,7 +69,7 @@ def handle_file_upload(uploaded_file, user, parent_object, relative_path, cache)
         else:
             parent_object = cache[dir_path]
 
-    return file_utils.create_file(user, uploaded_file, parent_object, log_prefix)
+    return file_utils.create_file(user, uploaded_file, parent_object, log_prefix), dir_path, parent_object
 
 
 def get_message_and_status(results):

@@ -5,20 +5,21 @@ import urllib
 from botocore.exceptions import ClientError, ParamValidationError
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db import transaction
 from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 from django.views.generic import ListView
 
 from cloud_file_storage import settings
-from file_storage.exceptions import StorageError
+from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError
 from file_storage.forms import FileUploadForm, DirectoryCreationForm
 from file_storage.models import UserFile, FileType
 from file_storage.services import directory_service, upload_service
 from file_storage.services.archive_service import ZipStreamGenerator
 from file_storage.services.upload_service import get_message_and_status
 from file_storage.storage.minio import minio_storage
-from file_storage.utils import ui, file_utils
+from file_storage.utils import ui
 from file_storage.utils.file_utils import get_all_files
 from file_storage.utils.path_utils import encode_path_for_url
 
@@ -80,7 +81,8 @@ class FileListView(LoginRequiredMixin, ListView):
             parent_object_or_response = None
 
             if parent_pk:
-                parent_object_or_response = directory_service.get_parent_directory_or_json_response(self.user, parent_pk)
+                parent_object_or_response = directory_service.get_parent_directory(self.user,
+                                                                                   parent_pk)
                 if isinstance(parent_object_or_response, JsonResponse):
                     return parent_object_or_response
 
@@ -132,9 +134,26 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
         files = request.FILES.getlist('files')
         user = request.user
 
-        parent_object_or_json = directory_service.get_parent_directory_or_json_response(user, parent_id)
-        if isinstance(parent_object_or_json, JsonResponse):
-            return parent_object_or_json
+        try:
+            parent_object = directory_service.get_parent_directory(user, parent_id)
+        except ParentDirectoryNotFoundError:
+            # logging внутри
+            return JsonResponse(
+                {'error': 'Ошибка. Родительская папка не найдена'},
+                status=400,
+            )
+        except InvalidParentIdError:
+            # logging внутри
+            return JsonResponse(
+                {'error': 'Ошибка. Некорректный идентификатор родительской папки.'},
+                status=400
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error. User: {user}. {e}")
+            return JsonResponse(
+                {'error': 'Неизвестная ошибка, попробуйте позже'},
+                status=500
+            )
 
         if relative_paths:
             if len(files) != len(relative_paths):
@@ -155,17 +174,28 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
         results = []
         cache = {}
         for uploaded_file, rel_path in zip(files, relative_paths):
-            form_data = {'parent': parent_object_or_json.pk if parent_object_or_json else None}
+            form_data = {'parent': parent_object.pk if parent_object else None}
             form_files = {'file': uploaded_file}
             form = FileUploadForm(form_data, form_files, user=user)
 
             if form.is_valid():
-                result = upload_service.handle_file_upload(
-                    uploaded_file, user, parent_object_or_json, rel_path, cache
-                )
-                results.append(result)
-                if 'error' in result:
-                    break
+                try:
+                    with transaction.atomic():
+                        result, dir_path_cache, parent_object_cache = upload_service.handle_file_upload(
+                            uploaded_file, user, parent_object, rel_path, cache
+                        )
+                    if result and 'error' not in result and dir_path_cache and dir_path_cache not in cache:
+                        cache[dir_path_cache] = parent_object_cache
+
+                except Exception as e:
+                    result = {
+                        'name': uploaded_file.name,
+                        'status': 'error',
+                        'error': f'Ошибка загрузки файла или папки'
+                    }
+
+                if result:
+                    results.append(result)
 
             else:
                 error_messages = []

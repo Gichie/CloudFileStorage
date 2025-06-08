@@ -132,5 +132,8 @@ class MinioStorage:
                     return False
         return True
 
+    def delete_object(self):
+        pass
+
 
 minio_storage = MinioStorage()
