@@ -86,6 +86,9 @@
                                 <i class="bi bi-info-circle"></i> По вашему запросу ничего не найдено.
                             </div>
                         {% endif %}
+                        {% if is_paginated %}
+                            {% include 'includes/pagination.html' %}
+                        {% endif %}
                     </div>
                 </div>
             </div>

@@ -6,14 +6,15 @@ from botocore.exceptions import ClientError, ParamValidationError
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
-from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, HttpResponse
+from django.shortcuts import get_object_or_404, redirect
 from django.views import View
 from django.views.generic import ListView
 
 from cloud_file_storage import settings
 from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError
 from file_storage.forms import FileUploadForm, DirectoryCreationForm
+from file_storage.mixins import QueryParamMixin
 from file_storage.models import UserFile, FileType
 from file_storage.services import directory_service, upload_service
 from file_storage.services.archive_service import ZipStreamGenerator
@@ -29,33 +30,29 @@ FILE_STORAGE_LIST_FILES_URL = 'file_storage:list_files'
 FILE_LIST_TEMPLATE = 'file_storage/list_files.html'
 
 
-class FileListView(LoginRequiredMixin, ListView):
+class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
     model = UserFile
     template_name = FILE_LIST_TEMPLATE
     context_object_name = 'items'
+    paginate_by = 20
 
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
         self.user = request.user
-        self.current_path_unencoded = request.GET.get('path')
-        self.current_directory = directory_service.get_current_directory_from_path(self.user,
-                                                                                   self.current_path_unencoded)
+        self.current_path_unencoded = request.GET.get('path', '')
+        self.current_directory = directory_service.get_current_directory_from_path(
+            self.user, self.current_path_unencoded
+        )
 
     def get_queryset(self):
-        if self.current_directory:
-            queryset = UserFile.objects.filter(user=self.user, parent=self.current_directory)
-            logger.info(f"User '{self.user.username}': Successfully resolved path '{self.current_path_unencoded}'")
-        else:
-            queryset = UserFile.objects.filter(user=self.user, parent=None)
-            logger.info(
-                f"User '{self.user.username}': "
-                f"Listing root directory contents (no specific path or path resolved to root)."
-            )
+        queryset = UserFile.objects.filter(user=self.user, parent=self.current_directory)
+        logger.info(f"User '{self.user.username}': Successfully resolved path '{self.current_path_unencoded}'")
 
         return queryset.order_by('object_type', 'name')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+
         context['current_directory'] = self.current_directory
         context['current_path_unencoded'] = self.current_path_unencoded
 
@@ -155,16 +152,18 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 status=500
             )
 
+        num_files = len(files)
+
         if relative_paths:
-            if len(files) != len(relative_paths):
+            if num_files != len(relative_paths):
                 logger.error(f"{self.__class__.__name__} User: '{user}'. Количество файлов и путей не совпадает.")
                 return JsonResponse({'error': 'Данные о путях файлов некорректны.'}, status=400)
         else:
-            relative_paths = [None for i in range(len(files))]
+            relative_paths = [None for i in range(num_files)]
 
         logger.info(
-            f"{self.__class__.__name__}: User '{user.username}' ID: {user.id} initiated files upload. "
-            f"Target parent_id: '{parent_id}'. Files: {relative_paths}"
+            f"{self.__class__.__name__}: User '{user.username}' ID: {user.id} initiated {num_files} files upload. "
+            f"Target parent_id: '{parent_id}'."
         )
 
         if not files:
@@ -214,6 +213,35 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
 
         response_data, status_code = get_message_and_status(results)
         return JsonResponse(response_data, status=status_code)
+
+
+class FileSearchView(QueryParamMixin, LoginRequiredMixin, ListView):
+    template_name = 'file_storage/search_results.html'
+    paginate_by = 25
+    context_object_name = 'search_results'
+
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        self.query = self.request.GET.get('query', None)
+
+    def get_queryset(self) -> HttpResponse:
+        if not self.query:
+            return UserFile.objects.none()
+
+        return UserFile.objects.filter(
+            user=self.request.user, name__icontains=self.query
+        ).order_by('object_type', 'name')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        unencoded_path = self.request.GET.get('current_path_unencoded', '')
+        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+
+        context['query'] = self.query
+        context['encoded_path'] = encoded_path
+
+        return context
 
 
 class DownloadFileView(LoginRequiredMixin, View):
@@ -288,30 +316,6 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
                     f"downloading directory '{directory.name}' "
                     f"as '{zip_filename}'.")
         return response
-
-
-class FileSearchView(LoginRequiredMixin, View):
-    template_name = 'file_storage/search_results.html'
-
-    def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
-        context = {}
-
-        query = request.GET.get('query', None)
-        unencoded_path = request.GET.get('current_path_unencoded', '')
-        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
-
-        if query:
-            search_results = UserFile.objects.filter(
-                user=request.user, name__icontains=query
-            ).order_by('object_type', 'name')
-        else:
-            search_results = None
-
-        context['search_results'] = search_results
-        context['query'] = query
-        context['encoded_path'] = encoded_path
-
-        return render(request, self.template_name, context)
 
 
 class DeleteView(LoginRequiredMixin, View):

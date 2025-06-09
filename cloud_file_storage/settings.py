@@ -101,6 +101,8 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
 # Django по умолчанию 2.5 МБ.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024  # 500 MB
 
+DATA_UPLOAD_MAX_NUMBER_FILES = 500
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
