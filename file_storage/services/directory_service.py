@@ -1,14 +1,131 @@
 import logging
 
 from botocore.exceptions import NoCredentialsError, ClientError, BotoCoreError
-from django.http import Http404
+from django.db import IntegrityError, transaction, router
+from django.http import Http404, JsonResponse
 
 from cloud_file_storage import settings
-from file_storage.exceptions import NameConflictError, StorageError, ParentDirectoryNotFoundError, InvalidParentIdError
+from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError
 from file_storage.models import UserFile, FileType, User
 from file_storage.storage.minio import minio_storage
+from file_storage.utils import file_utils
 
 logger = logging.getLogger(__name__)
+
+
+def create_directory(user, directory_name, parent_object=None):
+    """
+    Создает директорию в БД и S3 в рамках транзакции
+    """
+    try:
+        with transaction.atomic():
+            new_directory = UserFile(
+                user=user,
+                name=directory_name,
+                object_type=FileType.DIRECTORY,
+                parent=parent_object,
+            )
+            new_directory.save()
+
+            key = new_directory.get_s3_key_for_directory_marker()
+            minio_storage.create_empty_directory_marker(
+                settings.AWS_STORAGE_BUCKET_NAME,
+                key
+            )
+
+            logger.info(
+                f"User {user.username} Directory successfully created in DB and S3. "
+                f"Path={key}, DB ID={new_directory.id}"
+            )
+
+            return {'success': True, 'directory': new_directory}
+
+    except IntegrityError as e:
+        logger.error(f"Database integrity error during folder creation: {e}", exc_info=True)
+        return {
+            'success': False,
+            'message': 'Ошибка базы данных: Не удалось создать папку из-за конфликта данных.',
+            'status': 409,
+        }
+
+    except NoCredentialsError:
+        logger.critical("S3/Minio credentials not found. Cannot create directory marker.", exc_info=True)
+        return {
+            'success': False,
+            'message': 'Ошибка конфигурации сервера: Не удалось подключиться к хранилищу файлов.',
+            'status': 500
+        }
+
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code")
+        logger.error(f"S3 ClientError while creating directory marker '{key}': {e} (Code: {error_code})",
+                     exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'message': 'Ошибка хранилища. Не удалось создать папку в облаке.'
+        }, status=500)
+
+    except BotoCoreError as e:
+        logger.error(f"BotoCoreError while creating directory marker '{key}': {e}", exc_info=True)
+        return {
+            'success': False,
+            'message': 'Произошла ошибка при взаимодействии с файловым хранилищем. Попробуйте позже.',
+            'status': 503
+        }
+
+    except AttributeError as e:
+        logger.error(
+            f"AttributeError, possibly related to form.instance or S3 key generation: {e}", exc_info=True
+        )
+        return {
+            'success': False,
+            'message': 'Внутренняя ошибка сервера при подготовке данных для хранилища.',
+            'status': 500
+        }
+
+    except Exception as e:
+        logger.critical(f"Unexpected error during folder creation (S3 part): {e}", exc_info=True)
+        return {
+            'success': False,
+            'message': 'Произошла непредвиденная ошибка при создании папки.',
+            'status': 500
+        }
+
+
+def delete_object(storage_object):
+    logger.info(
+        f"User: '{storage_object.user}' "
+        f"is trying to delete {storage_object.object_type}: '{storage_object}' "
+        f"with ID: {storage_object.id}"
+    )
+    if storage_object.object_type == FileType.FILE:
+        storage_object.delete()
+
+    else:
+        with transaction.atomic():
+            # delete from s3
+            prefix = storage_object.path
+            objects_to_delete = minio_storage.get_all_object_keys_in_folder(prefix)
+            if not objects_to_delete:
+                logger.info(f"Папка '{prefix}' пуста или не существует. Удалять нечего")
+
+            chunk_size = 1000
+            for i in range(0, len(objects_to_delete), chunk_size):
+                chunk = objects_to_delete[i:i + chunk_size]
+
+                delete_request = {'Objects': chunk}
+
+                minio_storage.s3_client.delete_objects(
+                    Bucket=settings.AWS_STORAGE_BUCKET_NAME, Delete=delete_request,
+                )
+                logger.info(f"Удалено {len(chunk)} объектов")
+
+            # delete from db
+            files_to_delete = file_utils.get_all_files(storage_object)
+
+            files_to_delete._raw_delete(using=router.db_for_write(UserFile))
+
+    logger.info(f"User: '{storage_object.user}' deleted {storage_object.object_type} from DB successful")
 
 
 def get_parent_directory(user, parent_pk):

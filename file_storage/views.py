@@ -18,6 +18,7 @@ from file_storage.mixins import QueryParamMixin
 from file_storage.models import UserFile, FileType
 from file_storage.services import directory_service, upload_service
 from file_storage.services.archive_service import ZipStreamGenerator
+from file_storage.services.directory_service import delete_object
 from file_storage.services.upload_service import get_message_and_status
 from file_storage.storage.minio import minio_storage
 from file_storage.utils import ui
@@ -95,7 +96,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
                     'message': f"Файл или папка с именем '{directory_name}' уже существует в текущей директории."
                 }, status=400)
 
-            result = minio_storage.create_directory(self.user, directory_name, parent_object_or_response)
+            result = directory_service.create_directory(self.user, directory_name, parent_object_or_response)
 
             if result['success']:
                 return JsonResponse({
@@ -285,7 +286,7 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
             UserFile, id=directory_id, user=user, object_type=FileType.DIRECTORY
         )
 
-        all_files = get_all_files(directory, user)
+        all_files = get_all_files(directory)
 
         if not minio_storage.check_files_exist(all_files):
             messages.error(request, "Не удалось прочитать некоторые файлы из хранилища")
@@ -320,7 +321,14 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
 
 class DeleteView(LoginRequiredMixin, View):
     def post(self, request, *args, **kwargs):
-        return HttpResponse("Удаление выполнено", status=200)
+        user = request.user
+        storage_object = get_object_or_404(UserFile, user=user, id=request.POST.get('item_id'))
+        delete_object(storage_object)
+
+        unencoded_path = request.POST.get("unencoded_path", "")
+        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+
+        return redirect(encoded_path)
 
 
 class RenameView(LoginRequiredMixin, ListView):

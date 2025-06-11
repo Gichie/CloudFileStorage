@@ -16,18 +16,18 @@ def file_exists(user, parent, name):
     ).exists()
 
 
-def get_all_files(directory, user, type_flag=None):
+def get_all_files(directory):
     """
-    Получает все файлы рекурсивно одним запросом
+    Получает все объекты (файлы и подпапки) внутри указанной директории.
     """
-
-    all_files = (UserFile.objects.filter(
-        user=user, path__startswith=directory.path
-    ).exclude(
-        id=directory.id
-    ).select_related('user').only(
-        'id', 'name', 'path', 'object_type', 'file', 'user__id'
-    ).order_by('path', 'name'))
+    if directory.object_type == FileType.DIRECTORY:
+        all_files = (UserFile.objects.filter(
+            user=directory.user, path__startswith=directory.path
+        ).select_related('user').only(
+            'id', 'name', 'path', 'object_type', 'file', 'user__id'
+        ).order_by('path', 'name'))
+    else:
+        return UserFile.objects.none()
 
     return all_files
 

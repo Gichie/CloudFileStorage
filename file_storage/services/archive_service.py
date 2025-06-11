@@ -4,7 +4,6 @@ from typing import Iterator
 from zipstream import ZipStream, ZIP_DEFLATED
 
 from cloud_file_storage import settings
-from file_storage.exceptions import StorageError
 from file_storage.models import FileType
 from file_storage.storage.minio import minio_storage
 

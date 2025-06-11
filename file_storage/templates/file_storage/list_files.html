@@ -217,8 +217,6 @@
                 {% endif %}
 
             </div>
-
-
         {% endif %}
     </div>
 
@@ -229,6 +227,7 @@
                 <form method="post" action="{% url 'file_storage:delete_item' %}">
                     {% csrf_token %}
                     <input type="hidden" name="item_id" id="deleteItemId">
+                    <input type="hidden" name="unencoded_path" value="{{ current_path_unencoded }}">
                     <div class="modal-header">
                         <h5 class="modal-title" id="deleteModalLabel">Подтверждение удаления</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
