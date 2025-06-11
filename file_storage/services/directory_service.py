@@ -103,6 +103,11 @@ def delete_object(storage_object):
 
     else:
         with transaction.atomic():
+            # delete from db
+            files_to_delete = file_utils.get_all_files(storage_object)
+
+            files_to_delete._raw_delete(using=router.db_for_write(UserFile))
+
             # delete from s3
             prefix = storage_object.path
             objects_to_delete = minio_storage.get_all_object_keys_in_folder(prefix)
@@ -120,10 +125,7 @@ def delete_object(storage_object):
                 )
                 logger.info(f"Удалено {len(chunk)} объектов")
 
-            # delete from db
-            files_to_delete = file_utils.get_all_files(storage_object)
 
-            files_to_delete._raw_delete(using=router.db_for_write(UserFile))
 
     logger.info(f"User: '{storage_object.user}' deleted {storage_object.object_type} from DB successful")
 

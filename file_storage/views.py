@@ -5,8 +5,9 @@ import urllib
 from botocore.exceptions import ClientError, ParamValidationError
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, HttpResponse
+from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect
 from django.views import View
 from django.views.generic import ListView
@@ -272,11 +273,11 @@ class DownloadFileView(LoginRequiredMixin, View):
         except ParamValidationError as e:
             logger.error(f"{e}")
             messages.error(request, "Произошла ошибка при запросе к хранилищу")
-            return redirect(f'file_storage:list_files')
+            return redirect(FILE_STORAGE_LIST_FILES_URL)
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             messages.error(request, "Произошла ошибка при скачивании файла, попробуйте позже")
-            return redirect(f'file_storage:list_files')
+            return redirect(FILE_STORAGE_LIST_FILES_URL)
 
 
 class DownloadDirectoryView(LoginRequiredMixin, View):
@@ -322,11 +323,25 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
 class DeleteView(LoginRequiredMixin, View):
     def post(self, request, *args, **kwargs):
         user = request.user
-        storage_object = get_object_or_404(UserFile, user=user, id=request.POST.get('item_id'))
-        delete_object(storage_object)
 
         unencoded_path = request.POST.get("unencoded_path", "")
         encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+
+        item_id = request.POST.get('item_id')
+
+        try:
+            storage_object = get_object_or_404(UserFile, user=user, id=item_id)
+            delete_object(storage_object)
+        except ValidationError as e:
+            logger.warning(
+                f"User '{user}'. Invalid type received. UUID required. {type(item_id)} received.",
+                exc_info=True
+            )
+            messages.warning(request, "Удалить объект не удалось. Неправильный ID объекта")
+        except StorageError as e:
+            logger.error(f"User '{user}'. Error getting s3/minio keys. {e}", exc_info=True)
+            messages.error(request, "Удалить объект не получилось. "
+                                    "Не удалось получить ключи для удаления из хранилища")
 
         return redirect(encoded_path)
 

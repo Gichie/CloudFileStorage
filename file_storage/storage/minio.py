@@ -5,6 +5,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from cloud_file_storage import settings
+from file_storage.exceptions import StorageError
 from file_storage.models import FileType
 
 logger = logging.getLogger(__name__)
@@ -56,9 +57,11 @@ class MinioStorage:
         """Получает ВСЕ ключи объектов по заданному префиксу, используя Paginator."""
         keys_to_delete = []
 
-        paginator = self.s3_client.get_paginator('list_objects_v2')
-
-        pages = paginator.paginate(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Prefix=prefix)
+        try:
+            paginator = self.s3_client.get_paginator('list_objects_v2')
+            pages = paginator.paginate(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Prefix=prefix)
+        except Exception as e:
+            raise StorageError(f"{e}")
 
         for page in pages:
             for obj in page.get('Contents', []):
