@@ -112,7 +112,7 @@ def delete_object(storage_object):
             prefix = storage_object.path
             objects_to_delete = minio_storage.get_all_object_keys_in_folder(prefix)
             if not objects_to_delete:
-                logger.info(f"Папка '{prefix}' пуста или не существует. Удалять нечего")
+                logger.info(f"Directory '{prefix}' empty or does not exists.")
 
             chunk_size = 1000
             for i in range(0, len(objects_to_delete), chunk_size):
@@ -123,9 +123,7 @@ def delete_object(storage_object):
                 minio_storage.s3_client.delete_objects(
                     Bucket=settings.AWS_STORAGE_BUCKET_NAME, Delete=delete_request,
                 )
-                logger.info(f"Удалено {len(chunk)} объектов")
-
-
+                logger.info(f"{len(chunk)} objects removed")
 
     logger.info(f"User: '{storage_object.user}' deleted {storage_object.object_type} from DB successful")
 

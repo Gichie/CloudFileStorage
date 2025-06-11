@@ -332,6 +332,7 @@ class DeleteView(LoginRequiredMixin, View):
         try:
             storage_object = get_object_or_404(UserFile, user=user, id=item_id)
             delete_object(storage_object)
+            messages.success(request, f"{storage_object.get_object_type_display()} успешно удален(а)!")
         except ValidationError as e:
             logger.warning(
                 f"User '{user}'. Invalid type received. UUID required. {type(item_id)} received.",
@@ -347,4 +348,5 @@ class DeleteView(LoginRequiredMixin, View):
 
 
 class RenameView(LoginRequiredMixin, ListView):
-    pass
+    def post(self, request, *args, **kwargs):
+        redirect()

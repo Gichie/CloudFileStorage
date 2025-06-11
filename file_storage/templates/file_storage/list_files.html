@@ -283,7 +283,7 @@
     <div class="modal fade" id="renameModal" tabindex="-1" aria-labelledby="renameModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
-                <form method="post" action="{% url 'file_storage:rename' %}"> {# Замените 'rename_item' на ваш URL #}
+                <form method="post" action="{% url 'file_storage:rename' %}">
                     {% csrf_token %}
                     <input type="hidden" name="item_id" id="renameItemId">
                     <input type="hidden" name="item_type" id="renameItemType">
