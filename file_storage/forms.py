@@ -78,3 +78,24 @@ class DirectoryCreationForm(forms.ModelForm):
         if name.endswith('.') or name.startswith('.'):
             raise forms.ValidationError("Имя папки не может начинаться или оканчиваться на '.'")
         return name
+
+
+class RenameItemForm(forms.ModelForm):
+    class Meta:
+        model = UserFile
+        fields = ['name']
+
+    def clean_name(self):
+        name = self.cleaned_data.get('name')
+        if self.instance and self.instance.pk and self.instance.name == name:
+            raise forms.ValidationError("Новое имя не должно совпадать со старым.")
+        if not name:
+            raise forms.ValidationError("Имя не может быть пустым.")
+        if INVALID_CHARS_PATTERN.search(name):
+            raise forms.ValidationError("Имя не может содержать символы: / \\ < > : \" | ? *")
+        if name == '.':
+            raise forms.ValidationError("Имя не может быть '.'")
+        if name.endswith('.') or name.startswith('.'):
+            raise forms.ValidationError("Имя не может начинаться или оканчиваться на '.'")
+
+        return name

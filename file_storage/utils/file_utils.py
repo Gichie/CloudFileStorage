@@ -52,8 +52,8 @@ def create_file(user, uploaded_file, parent_object, log_prefix=None):
         )
         user_file_instance.save()
 
-        logger.info(
-            f"{log_prefix} Successfully uploaded and saved. "
+        logger.debug(
+            f"{user_file_instance.object_type} successfully uploaded and saved. {log_prefix}. "
             f"UserFile ID: {user_file_instance.id}, Minio Path: {user_file_instance.file.name}"
         )
 

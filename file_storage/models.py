@@ -59,8 +59,11 @@ class UserFile(models.Model):
         self.path = self.get_full_path()
 
         if self.file and not self.is_directory():
-            self.file_size = self.file.size
-            self.content_type = self.file.file.content_type
+            if not self.file_size:
+                self.file_size = self.file.size
+            self.file.name = self.path
+            if not self.content_type:
+                self.content_type = self.file.file.content_type
 
         super().save(*args, **kwargs)
 

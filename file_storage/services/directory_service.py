@@ -7,10 +7,12 @@ from django.http import Http404, JsonResponse
 from cloud_file_storage import settings
 from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError
 from file_storage.models import UserFile, FileType, User
-from file_storage.storage.minio import minio_storage
+from file_storage.storages.minio import minio_client
 from file_storage.utils import file_utils
 
 logger = logging.getLogger(__name__)
+
+BUCKET_NAME = settings.AWS_STORAGE_BUCKET_NAME
 
 
 def create_directory(user, directory_name, parent_object=None):
@@ -28,8 +30,8 @@ def create_directory(user, directory_name, parent_object=None):
             new_directory.save()
 
             key = new_directory.get_s3_key_for_directory_marker()
-            minio_storage.create_empty_directory_marker(
-                settings.AWS_STORAGE_BUCKET_NAME,
+            minio_client.create_empty_directory_marker(
+                BUCKET_NAME,
                 key
             )
 
@@ -105,25 +107,11 @@ def delete_object(storage_object):
         with transaction.atomic():
             # delete from db
             files_to_delete = file_utils.get_all_files(storage_object)
-
             files_to_delete._raw_delete(using=router.db_for_write(UserFile))
 
             # delete from s3
             prefix = storage_object.path
-            objects_to_delete = minio_storage.get_all_object_keys_in_folder(prefix)
-            if not objects_to_delete:
-                logger.info(f"Directory '{prefix}' empty or does not exists.")
-
-            chunk_size = 1000
-            for i in range(0, len(objects_to_delete), chunk_size):
-                chunk = objects_to_delete[i:i + chunk_size]
-
-                delete_request = {'Objects': chunk}
-
-                minio_storage.s3_client.delete_objects(
-                    Bucket=settings.AWS_STORAGE_BUCKET_NAME, Delete=delete_request,
-                )
-                logger.info(f"{len(chunk)} objects removed")
+            minio_client.delete_objects_by_prefix(prefix)
 
     logger.info(f"User: '{storage_object.user}' deleted {storage_object.object_type} from DB successful")
 
@@ -140,7 +128,7 @@ def get_parent_directory(user, parent_pk):
                 object_type=FileType.DIRECTORY,
             )
             logger.info(
-                f"[{__name__}] User '{user.username}' "
+                f"User: '{user.username}' "
                 f"successfully identified parent directory: '{parent_object.name}' "
                 f"(ID: {parent_object.id}) for new directory creation."
             )
@@ -191,7 +179,7 @@ def create_directories_from_path(user, parent_object, path_components):
         )
 
         if created:
-            logger.info(
+            logger.debug(
                 f"User '{user.username}': Created directory '{directory_name}' "
                 f"(ID: {directory_object.id}) under parent "
                 f"'{current_parent.name if current_parent else 'root'}'."
@@ -199,8 +187,8 @@ def create_directories_from_path(user, parent_object, path_components):
             try:
                 # Создание "директории" в S3/Minio
                 key = directory_object.get_s3_key_for_directory_marker()
-                minio_storage.create_empty_directory_marker(settings.AWS_STORAGE_BUCKET_NAME, key)
-                logger.info(f"User '{user.username}': S3 marker created for directory '{key}'.")
+                minio_client.create_empty_directory_marker(BUCKET_NAME, key)
+                logger.debug(f"User '{user.username}': S3 marker created for directory '{key}'.")
             except (NoCredentialsError, ClientError, BotoCoreError) as e:
                 logger.error(
                     f"User '{user.username}': FAILED to create S3 marker for directory '{directory_object.name}' "

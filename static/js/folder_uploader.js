@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', function () {
             folderProgressBar.classList.remove('bg-success', 'bg-danger', 'bg-warning');
             folderProgressBar.classList.add('progress-bar-animated'); // Восстанавливаем анимацию
         }
-        //if (folderProgressCounter) folderProgressCounter.textContent = `0/${totalFilesCount} файлов`;
+
         if (currentFileUploading) currentFileUploading.textContent = 'Загрузка...';
         if (folderUploadErrorList) folderUploadErrorList.innerHTML = '';
         if (folderUploadErrorsContainer) folderUploadErrorsContainer.style.display = 'none';
@@ -53,9 +53,6 @@ document.addEventListener('DOMContentLoaded', function () {
             folderProgressBar.style.width = percentage + '%';
             folderProgressBar.textContent = percentage + '%';
         }
-        /* if (folderProgressCounter) {
-            folderProgressCounter.textContent = `${processed}/${total} файлов (Успешно: ${successful})`;
-        } */
         if (currentFileUploading) {
             currentFileUploading.textContent = currentFileName ? `Загрузка: ${currentFileName}` : (processed === total ? "Завершение..." : "Ожидание...");
         }
@@ -97,8 +94,19 @@ document.addEventListener('DOMContentLoaded', function () {
     async function handleFolderUpload(event) {
         const files = Array.from(event.target.files);
         const parentId = getCurrentFolderId();
+        const MAX_ALLOWED_FILES = window.MAX_ALLOWED_FILES;
+        const MAX_UPLOAD_SIZE_BYTES = window.MAX_UPLOAD_SIZE_BYTES; // 500 МБ (должно совпадать с лимитом Nginx and in settings)
 
-        const MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024; // 500 МБ (должно совпадать с лимитом Nginx)
+        // Проверка лимита файлов до любой другой логики
+        if (files.length > MAX_ALLOWED_FILES) {
+            showFinalStatusMessage(
+                `Ошибка: Количество файлов в папке (${files.length}) превышает максимально допустимое (${MAX_ALLOWED_FILES}). Загрузите меньше файлов за один раз.`,
+                true
+            );
+            event.target.value = null; // сброс выбранных файлов, чтобы пользователь мог повторить выбор
+            return;
+        }
+
         let totalSize = 0;
         for (const file of files) {
             totalSize += file.size;
@@ -107,15 +115,15 @@ document.addEventListener('DOMContentLoaded', function () {
         if (totalSize > MAX_UPLOAD_SIZE_BYTES) {
             // Показываем ошибку МГНОВЕННО, до отправки запроса
             showFinalStatusMessage(
-                `Ошибка: Общий размер папки (${(totalSize / 1024 / 1024).toFixed(2)} МБ) превышает лимит в 500 МБ.`,
+                `Ошибка: Общий размер папки (${(totalSize / 1024 / 1024).toFixed(2)} МБ) превышает лимит в ${MAX_UPLOAD_SIZE_BYTES} МБ.`,
                 true
             );
             event.target.value = null; // Сбрасываем инпут
-            return; // Прерываем выполнение функции
+            return;
         }
 
-        const csrfToken = getCsrfToken(); // Убедись, что эта функция возвращает токен
-        const uploadUrl = window.UPLOAD_URL; // Убедись, что эта переменная определена
+        const csrfToken = getCsrfToken();
+        const uploadUrl = window.UPLOAD_URL;
 
         const totalFiles = files.length;
         resetFolderUploadUI(totalFiles);
@@ -147,16 +155,12 @@ document.addEventListener('DOMContentLoaded', function () {
             return new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 xhr.open('POST', url, true);
-
-                // Django при использовании AJAX с XHR ожидает CSRF-токен в заголовке.
                 xhr.setRequestHeader('X-CSRFToken', csrfToken);
 
-                // Обработчик, который срабатывает ПОСЛЕ завершения запроса (успешного или нет).
                 xhr.onload = function () {
                     // Этот блок сработает для любого HTTP-статуса, включая 413.
                     if (xhr.status === 413) {
-                        // Nginx вернул ошибку "Request Entity Too Large".
-                        // Отклоняем промис с кастомным объектом ошибки.
+
                         reject({
                             isNginxLimitError: true,
                             message: 'Ошибка: Папка слишком большая. Превышен лимит на сервере.'
@@ -164,12 +168,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         return;
                     }
 
-                    // Для всех остальных случаев, разрешаем промис с объектом,
-                    // имитирующим ответ от fetch.
                     resolve({
                         ok: xhr.status >= 200 && xhr.status < 300,
                         status: xhr.status,
-                        // Добавляем функцию, чтобы парсить JSON, как в fetch.
                         json: () => {
                             try {
                                 return JSON.parse(xhr.responseText);
@@ -180,9 +181,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     });
                 };
 
-                // Обработчик, который срабатывает только при РЕАЛЬНЫХ сетевых сбоях.
-                // (например, нет сети, или сервер принудительно разорвал соединение).
-                // Ошибка 413 от Nginx часто попадает именно сюда.
                 xhr.onerror = function () {
                     reject({
                         isNetworkError: true,

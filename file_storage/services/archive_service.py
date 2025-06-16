@@ -5,7 +5,7 @@ from zipstream import ZipStream, ZIP_DEFLATED
 
 from cloud_file_storage import settings
 from file_storage.models import FileType
-from file_storage.storage.minio import minio_storage
+from file_storage.storages.minio import minio_client
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class ZipStreamGenerator:
 
     def _stream_file_from_s3(self, s3_key: str) -> Iterator[bytes]:
         """Потоковое чтение файла из S3"""
-        response = minio_storage.s3_client.get_object(
+        response = minio_client.s3_client.get_object(
             Bucket=settings.AWS_STORAGE_BUCKET_NAME,
             Key=s3_key,
         )

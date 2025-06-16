@@ -6,22 +6,22 @@ from botocore.exceptions import ClientError, ParamValidationError
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
-from django.db import transaction
-from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, HttpResponse, HttpResponseBadRequest
+from django.db import transaction, IntegrityError
+from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views import View
 from django.views.generic import ListView
 
 from cloud_file_storage import settings
 from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError
-from file_storage.forms import FileUploadForm, DirectoryCreationForm
+from file_storage.forms import FileUploadForm, DirectoryCreationForm, RenameItemForm
 from file_storage.mixins import QueryParamMixin
 from file_storage.models import UserFile, FileType
 from file_storage.services import directory_service, upload_service
 from file_storage.services.archive_service import ZipStreamGenerator
-from file_storage.services.directory_service import delete_object
+from file_storage.services.directory_service import delete_object, directory_exists
 from file_storage.services.upload_service import get_message_and_status
-from file_storage.storage.minio import minio_storage
+from file_storage.storages.minio import minio_client
 from file_storage.utils import ui
 from file_storage.utils.file_utils import get_all_files
 from file_storage.utils.path_utils import encode_path_for_url
@@ -48,7 +48,9 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         queryset = UserFile.objects.filter(user=self.user, parent=self.current_directory)
-        logger.info(f"User '{self.user.username}': Successfully resolved path '{self.current_path_unencoded}'")
+        if not self.current_directory:
+            self.current_directory = None
+        logger.info(f"User: '{self.user}' has successfully moved to the '{self.current_directory}' directory.")
 
         return queryset.order_by('object_type', 'name')
 
@@ -57,8 +59,9 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
 
         context['current_directory'] = self.current_directory
         context['current_path_unencoded'] = self.current_path_unencoded
-
         context['breadcrumbs'] = ui.generate_breadcrumbs(self.current_path_unencoded)
+        context['DATA_UPLOAD_MAX_NUMBER_FILES'] = settings.DATA_UPLOAD_MAX_NUMBER_FILES
+        context['DATA_UPLOAD_MAX_MEMORY_SIZE'] = settings.DATA_UPLOAD_MAX_MEMORY_SIZE
 
         # Формирование URL для кнопки "Назад"
         context['parent_level_url'] = ui.get_parent_url(
@@ -214,6 +217,7 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 })
 
         response_data, status_code = get_message_and_status(results)
+        logger.info(f"User: '{user}'. {response_data.get('message')}. Status_code: {status_code}")
         return JsonResponse(response_data, status=status_code)
 
 
@@ -248,6 +252,9 @@ class FileSearchView(QueryParamMixin, LoginRequiredMixin, ListView):
 
 class DownloadFileView(LoginRequiredMixin, View):
     def get(self, request, file_id):
+        unencoded_path = request.GET.get("path_param", "")
+        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+
         user_file = get_object_or_404(
             UserFile, id=file_id, user=request.user, object_type=FileType.FILE
         )
@@ -255,29 +262,35 @@ class DownloadFileView(LoginRequiredMixin, View):
         s3_key = user_file.file.name
 
         try:
-            presigned_url = minio_storage.s3_client.generate_presigned_url(
-                'get_object',
-                Params={
-                    'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
-                    'Key': s3_key,
-                    'ResponseContentDisposition': f'attachment; filename="{user_file.name}"'
-                },
-                ExpiresIn=1800
-            )
-            logger.info(f"File downloaded successfully. s3_key: {s3_key}, presigned_url: {presigned_url}")
-            return HttpResponseRedirect(presigned_url)
+            if minio_client.check_files_exist((user_file,)):
+                presigned_url = minio_client.s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={
+                        'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
+                        'Key': s3_key,
+                        'ResponseContentDisposition': f'attachment; filename="{user_file.name}"'
+                    },
+                    ExpiresIn=1800
+                )
+                logger.info(f"File downloaded successfully. s3_key: {s3_key}, presigned_url: {presigned_url}")
+                return HttpResponseRedirect(presigned_url)
+
+            else:
+                logger.warning(f"User: '{user_file.user}. File does not found in s3/minio storage'",
+                               exc_info=True)
+                messages.warning(request, f"Такого файла: '{user_file}' не существует")
+
         except ClientError as e:
             logger.error(f"Error generating presigned URL for s3_key: {s3_key}: {e}")
             messages.error(request, "Произошла ошибка при обращении к хранилищу, попробуйте позже")
-            return redirect(f'file_storage:list_files')
         except ParamValidationError as e:
             logger.error(f"{e}")
             messages.error(request, "Произошла ошибка при запросе к хранилищу")
-            return redirect(FILE_STORAGE_LIST_FILES_URL)
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             messages.error(request, "Произошла ошибка при скачивании файла, попробуйте позже")
-            return redirect(FILE_STORAGE_LIST_FILES_URL)
+
+        return redirect(encoded_path)
 
 
 class DownloadDirectoryView(LoginRequiredMixin, View):
@@ -289,7 +302,7 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
 
         all_files = get_all_files(directory)
 
-        if not minio_storage.check_files_exist(all_files):
+        if not minio_client.check_files_exist(all_files):
             messages.error(request, "Не удалось прочитать некоторые файлы из хранилища")
             return redirect(FILE_STORAGE_LIST_FILES_URL)
 
@@ -347,6 +360,70 @@ class DeleteView(LoginRequiredMixin, View):
         return redirect(encoded_path)
 
 
-class RenameView(LoginRequiredMixin, ListView):
+class RenameView(LoginRequiredMixin, View):
     def post(self, request, *args, **kwargs):
-        redirect()
+        unencoded_path = request.POST.get("unencoded_path", "")
+        item_id = request.POST.get('id')
+        user = request.user
+        new_name = request.POST.get('name')
+
+        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+
+        if not item_id:
+            logger.warning(f"User '{user}'. Object ID was not transmitted")
+            messages.error(request, "Не удалось определить объект для переименования (ID отсутствует).")
+            return redirect(encoded_path)
+
+        try:
+            object_instance = get_object_or_404(UserFile, user=user, id=item_id)
+        except ValidationError as e:
+            logger.warning(
+                f"User '{user}'. Invalid type received. UUID required. {type(item_id)} received. {e}",
+                exc_info=True
+            )
+            messages.warning(request, "Переименовать объект не удалось. Неправильный ID объекта")
+            return redirect(encoded_path)
+
+        if directory_exists(user, new_name, object_instance.parent):
+            logger.warning(f"User '{user}' tried to save an object with an existing one.")
+            messages.warning(request, "Файл или папка с таким именем уже существует")
+            return redirect(encoded_path)
+
+        form = RenameItemForm(request.POST, instance=object_instance)
+        if form.is_valid():
+
+            try:
+                with transaction.atomic():
+                    old_minio_key = object_instance.file.name if object_instance.object_type == FileType.FILE else object_instance.path
+                    form.save()
+                    new_minio_key = object_instance.get_full_path()
+
+                    if object_instance.object_type == FileType.FILE:
+                        minio_client.rename_file(old_minio_key, new_minio_key)
+
+                    elif object_instance.object_type == FileType.DIRECTORY:
+                        minio_client.rename_directory(old_minio_key, new_minio_key)
+
+                    logger.info(f"User '{user}' renamed {object_instance.object_type} "
+                                f"to '{form.cleaned_data['name']}'")
+                    messages.success(request,
+                                     f"{object_instance.get_object_type_display()} успешно переименован(а)")
+
+            except IntegrityError as e:
+                logger.warning(f"User: '{user}'. Error while renaming object. '{object_instance.object_type}' "
+                               f"with that name already exists with ID {object_instance.id}.\n{e}. ", exc_info=True)
+                messages.warning(request,
+                                 f"{object_instance.get_object_type_display()} с таким именем уже существует")
+            except StorageError as e:
+                logger.error(f"User '{user}'. Error getting s3/minio keys. {e}", exc_info=True)
+                messages.error(request, "Переименовать объект не получилось. "
+                                        "Не удалось получить ключи для удаления из хранилища")
+            except Exception as e:
+                logger.warning(f"User: '{user}'. Error while renaming '{object_instance.object_type}'"
+                               f"with ID {object_instance.id}.\n{e}", exc_info=True)
+                messages.error(request, f"Произошла ошибка при переименовании")
+
+        else:
+            messages.warning(request, form.errors["name"][0])
+
+        return redirect(encoded_path)

@@ -193,7 +193,7 @@
 
                                 {% if item %}
                                     {% if item.object_type == 'file' %}
-                                        <a href="{% url 'file_storage:download_file' item.id %}"
+                                        <a href="{% url 'file_storage:download_file' item.id %}?path_param={{ current_path_unencoded|urlencode }}"
                                            class="btn btn-sm btn-outline-success"
                                            title="Скачать  {{ item.name }}">
                                             <i class="bi bi-download"></i>
@@ -285,8 +285,8 @@
             <div class="modal-content">
                 <form method="post" action="{% url 'file_storage:rename' %}">
                     {% csrf_token %}
-                    <input type="hidden" name="item_id" id="renameItemId">
-                    <input type="hidden" name="item_type" id="renameItemType">
+                    <input type="hidden" name="id" id="renameItemId">
+                    <input type="hidden" name="unencoded_path" value="{{ current_path_unencoded }}">
                     <div class="modal-header">
                         <h5 class="modal-title" id="renameModalLabel">Переименовать</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -294,7 +294,7 @@
                     <div class="modal-body">
                         <div class="mb-3">
                             <label for="newItemName" class="form-label">Новое имя</label>
-                            <input type="text" class="form-control" id="newItemName" name="new_name" required>
+                            <input type="text" class="form-control" id="newItemName" name="name" required>
                             <small id="renameItemTypeLabel" class="form-text text-muted"></small>
                         </div>
                     </div>
@@ -337,9 +337,12 @@
         window.UPLOAD_URL = "{% url 'file_storage:upload_file_ajax' %}";
         window.CURRENT_LIST_URL = "{% url 'file_storage:list_files' %}{% if current_path_unencoded %}?path={{ current_path_unencoded|urlencode }}{% endif %}";
     </script>
+    <script>window.MAX_ALLOWED_FILES = {{ DATA_UPLOAD_MAX_NUMBER_FILES }};</script>
+    <script>window.MAX_UPLOAD_SIZE_BYTES = {{ DATA_UPLOAD_MAX_MEMORY_SIZE }};</script>
     <script src="{% static 'js/file_storage.js' %}"></script>
     <script src="{% static 'js/create_directory.js' %}"></script>
     <script src="{% static 'js/folder_uploader.js' %}" defer></script>
+
     <script>
         // Инициализация всплывающих подсказок Bootstrap (если есть) и Toast
         document.addEventListener('DOMContentLoaded', function () {
