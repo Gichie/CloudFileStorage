@@ -115,7 +115,7 @@ def delete_object_from_db_and_s3(storage_object):
     else:
         with transaction.atomic():
             # delete from db
-            files_to_delete = file_utils.get_all_files(storage_object)
+            files_to_delete = UserFile.objects.get_all_children_files(storage_object)
             files_to_delete._raw_delete(using=router.db_for_write(UserFile))
 
             # delete from s3

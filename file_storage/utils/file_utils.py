@@ -16,22 +16,6 @@ def file_exists(user, parent, name):
     ).exists()
 
 
-def get_all_files(directory):
-    """
-    Получает все объекты (файлы и подпапки) внутри указанной директории.
-    """
-    if directory.object_type == FileType.DIRECTORY:
-        all_files = (UserFile.objects.filter(
-            user=directory.user, path__startswith=directory.path
-        ).select_related('user').only(
-            'id', 'name', 'path', 'object_type', 'file', 'user__id'
-        ).order_by('path', 'name'))
-    else:
-        return UserFile.objects.none()
-
-    return all_files
-
-
 def create_file(user, uploaded_file, parent_object, log_prefix=None):
     if file_exists(user, parent_object, uploaded_file.name):
         message = f"Upload failed. File or directory with this name already exists. {log_prefix}"

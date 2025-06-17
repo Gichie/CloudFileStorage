@@ -23,7 +23,6 @@ from file_storage.services.directory_service import delete_object_from_db_and_s3
 from file_storage.services.upload_service import get_message_and_status
 from file_storage.storages.minio import minio_client
 from file_storage.utils import ui
-from file_storage.utils.file_utils import get_all_files
 from file_storage.utils.path_utils import encode_path_for_url
 
 logger = logging.getLogger(__name__)
@@ -303,7 +302,7 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
             UserFile, id=directory_id, user=user, object_type=FileType.DIRECTORY
         )
 
-        all_files = get_all_files(directory)
+        all_files = UserFile.objects.get_all_children_files(directory)
 
         if not minio_client.check_files_exist(all_files):
             messages.error(request, "Не удалось прочитать некоторые файлы из хранилища")
@@ -395,7 +394,11 @@ class RenameView(LoginRequiredMixin, View):
         if form.is_valid():
             try:
                 with transaction.atomic():
-                    old_minio_key = object_instance.file.name if object_instance.object_type == FileType.FILE else object_instance.path
+                    if object_instance.object_type == FileType.FILE:
+                        old_minio_key = object_instance.file.name
+                    else:
+                        old_minio_key = object_instance.path
+
                     form.save()
                     new_minio_key = object_instance.get_full_path()
 

@@ -16,6 +16,23 @@ class FileType(models.TextChoices):
     DIRECTORY = 'directory', 'Папка'
 
 
+class UserFileManager(models.Manager):
+    def get_all_children_files(self, directory):
+        """
+        Получает все объекты (файлы и подпапки) внутри указанной директории.
+        """
+        if directory.object_type == FileType.DIRECTORY:
+            all_files = (UserFile.objects.filter(
+                user=directory.user, path__startswith=directory.path
+            ).select_related('user').only(
+                'id', 'name', 'path', 'object_type', 'file', 'user__id'
+            ).order_by('path', 'name'))
+        else:
+            return UserFile.objects.none()
+
+        return all_files
+
+
 class UserFile(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='files')
@@ -33,6 +50,8 @@ class UserFile(models.Model):
 
     class Meta:
         unique_together = ('user', 'name', 'parent')
+
+    objects = UserFileManager()
 
     def __str__(self):
         if self.parent:
@@ -55,7 +74,6 @@ class UserFile(models.Model):
         return path
 
     def save(self, *args, **kwargs):
-        old_path = self.path if self.pk else None
         self.path = self.get_full_path()
 
         if self.file and not self.is_directory():
