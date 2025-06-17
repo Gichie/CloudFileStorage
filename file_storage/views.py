@@ -400,6 +400,10 @@ class RenameView(LoginRequiredMixin, View):
                         minio_client.rename_file(old_minio_key, new_minio_key)
 
                     elif object_instance.object_type == FileType.DIRECTORY:
+                        if old_minio_key and new_minio_key and old_minio_key != new_minio_key:
+                            DirectoryService.update_children_paths(
+                                object_instance, old_minio_key, new_minio_key
+                            )
                         minio_client.rename_directory(old_minio_key, new_minio_key)
 
                     logger.info(f"User '{user}' renamed {object_instance.object_type} "

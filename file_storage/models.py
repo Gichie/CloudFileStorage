@@ -67,13 +67,6 @@ class UserFile(models.Model):
 
         super().save(*args, **kwargs)
 
-        if old_path and old_path != self.path:
-            self.update_children_paths()
-
-    def update_children_paths(self):
-        for child in self.children.all():
-            child.save()
-
     def get_s3_key_for_directory_marker(self):
         # Возвращает ключ для объекта-маркера папки в S3 (если используется)
         if self.is_directory():

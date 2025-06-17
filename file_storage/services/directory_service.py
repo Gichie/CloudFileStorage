@@ -1,7 +1,9 @@
 import logging
 
 from botocore.exceptions import NoCredentialsError, ClientError, BotoCoreError
-from django.db import IntegrityError, transaction, router
+from django.db import IntegrityError, transaction, router, connection
+from django.db.models import Value, F
+from django.db.models.functions import Replace, Concat
 from django.http import Http404, JsonResponse
 
 from cloud_file_storage import settings
@@ -91,6 +93,14 @@ class DirectoryService:
                 'message': 'Произошла непредвиденная ошибка при создании папки.',
                 'status': 500
             }
+
+    @staticmethod
+    def update_children_paths(directory, old_path, new_path):
+        children = UserFile.objects.filter(user=directory.user, path__startswith=old_path)
+        children.update(path=Replace('path', Value(old_path), Value(new_path)))
+        UserFile.objects.filter(
+            user=directory.user, path__startswith=new_path, object_type=FileType.FILE
+        ).update(file=Replace('file', Value(old_path), Value(new_path)))
 
 
 def delete_object_from_db_and_s3(storage_object):
