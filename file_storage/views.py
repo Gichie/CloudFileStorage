@@ -19,7 +19,7 @@ from file_storage.mixins import QueryParamMixin
 from file_storage.models import UserFile, FileType
 from file_storage.services import directory_service, upload_service
 from file_storage.services.archive_service import ZipStreamGenerator
-from file_storage.services.directory_service import delete_object, directory_exists
+from file_storage.services.directory_service import delete_object_from_db_and_s3, directory_exists, DirectoryService
 from file_storage.services.upload_service import get_message_and_status
 from file_storage.storages.minio import minio_client
 from file_storage.utils import ui
@@ -100,7 +100,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
                     'message': f"Файл или папка с именем '{directory_name}' уже существует в текущей директории."
                 }, status=400)
 
-            result = directory_service.create_directory(self.user, directory_name, parent_object_or_response)
+            result = DirectoryService.create(self.user, directory_name, parent_object_or_response)
 
             if result['success']:
                 return JsonResponse({
@@ -344,7 +344,7 @@ class DeleteView(LoginRequiredMixin, View):
 
         try:
             storage_object = get_object_or_404(UserFile, user=user, id=item_id)
-            delete_object(storage_object)
+            delete_object_from_db_and_s3(storage_object)
             messages.success(request, f"{storage_object.get_object_type_display()} успешно удален(а)!")
         except ValidationError as e:
             logger.warning(
@@ -353,9 +353,8 @@ class DeleteView(LoginRequiredMixin, View):
             )
             messages.warning(request, "Удалить объект не удалось. Неправильный ID объекта")
         except StorageError as e:
-            logger.error(f"User '{user}'. Error getting s3/minio keys. {e}", exc_info=True)
-            messages.error(request, "Удалить объект не получилось. "
-                                    "Не удалось получить ключи для удаления из хранилища")
+            logger.error(f"User '{user}'. Error while deleting '{storage_object}' from s3. {e}", exc_info=True)
+            messages.error(request, "Удалить объект не получилось.")
 
         return redirect(encoded_path)
 
@@ -391,7 +390,6 @@ class RenameView(LoginRequiredMixin, View):
 
         form = RenameItemForm(request.POST, instance=object_instance)
         if form.is_valid():
-
             try:
                 with transaction.atomic():
                     old_minio_key = object_instance.file.name if object_instance.object_type == FileType.FILE else object_instance.path

@@ -15,86 +15,85 @@ logger = logging.getLogger(__name__)
 BUCKET_NAME = settings.AWS_STORAGE_BUCKET_NAME
 
 
-def create_directory(user, directory_name, parent_object=None):
-    """
-    Создает директорию в БД и S3 в рамках транзакции
-    """
-    try:
-        with transaction.atomic():
-            new_directory = UserFile(
-                user=user,
-                name=directory_name,
-                object_type=FileType.DIRECTORY,
-                parent=parent_object,
+class DirectoryService:
+    @staticmethod
+    def create(user, directory_name, parent_object=None):
+        """
+        Создает запись директории в БД и вызывает создание маркера для обозначения директории в S3 хранилище
+        """
+        try:
+            with transaction.atomic():
+                new_directory = UserFile(
+                    user=user,
+                    name=directory_name,
+                    object_type=FileType.DIRECTORY,
+                    parent=parent_object,
+                )
+                new_directory.save()
+
+                key = new_directory.get_s3_key_for_directory_marker()
+                minio_client.create_empty_directory_marker(BUCKET_NAME, key)
+
+                logger.info(
+                    f"User {user.username} Directory successfully created in DB and S3. "
+                    f"Path={key}, DB ID={new_directory.id}"
+                )
+
+                return {'success': True, 'directory': new_directory}
+
+        except IntegrityError as e:
+            logger.error(f"Database integrity error during folder creation: {e}", exc_info=True)
+            return {
+                'success': False,
+                'message': 'Ошибка базы данных: Не удалось создать папку из-за конфликта данных.',
+                'status': 409,
+            }
+
+        except NoCredentialsError:
+            logger.critical("S3/Minio credentials not found. Cannot create directory marker.", exc_info=True)
+            return {
+                'success': False,
+                'message': 'Ошибка конфигурации сервера: Не удалось подключиться к хранилищу файлов.',
+                'status': 500
+            }
+
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code")
+            logger.error(f"S3 ClientError while creating directory marker '{key}': {e} (Code: {error_code})",
+                         exc_info=True)
+            return JsonResponse({
+                'success': False,
+                'message': 'Ошибка хранилища. Не удалось создать папку в облаке.'
+            }, status=500)
+
+        except BotoCoreError as e:
+            logger.error(f"BotoCoreError while creating directory marker '{key}': {e}", exc_info=True)
+            return {
+                'success': False,
+                'message': 'Произошла ошибка при взаимодействии с файловым хранилищем. Попробуйте позже.',
+                'status': 503
+            }
+
+        except AttributeError as e:
+            logger.error(
+                f"AttributeError, possibly related to form.instance or S3 key generation: {e}", exc_info=True
             )
-            new_directory.save()
+            return {
+                'success': False,
+                'message': 'Внутренняя ошибка сервера при подготовке данных для хранилища.',
+                'status': 500
+            }
 
-            key = new_directory.get_s3_key_for_directory_marker()
-            minio_client.create_empty_directory_marker(
-                BUCKET_NAME,
-                key
-            )
-
-            logger.info(
-                f"User {user.username} Directory successfully created in DB and S3. "
-                f"Path={key}, DB ID={new_directory.id}"
-            )
-
-            return {'success': True, 'directory': new_directory}
-
-    except IntegrityError as e:
-        logger.error(f"Database integrity error during folder creation: {e}", exc_info=True)
-        return {
-            'success': False,
-            'message': 'Ошибка базы данных: Не удалось создать папку из-за конфликта данных.',
-            'status': 409,
-        }
-
-    except NoCredentialsError:
-        logger.critical("S3/Minio credentials not found. Cannot create directory marker.", exc_info=True)
-        return {
-            'success': False,
-            'message': 'Ошибка конфигурации сервера: Не удалось подключиться к хранилищу файлов.',
-            'status': 500
-        }
-
-    except ClientError as e:
-        error_code = e.response.get("Error", {}).get("Code")
-        logger.error(f"S3 ClientError while creating directory marker '{key}': {e} (Code: {error_code})",
-                     exc_info=True)
-        return JsonResponse({
-            'success': False,
-            'message': 'Ошибка хранилища. Не удалось создать папку в облаке.'
-        }, status=500)
-
-    except BotoCoreError as e:
-        logger.error(f"BotoCoreError while creating directory marker '{key}': {e}", exc_info=True)
-        return {
-            'success': False,
-            'message': 'Произошла ошибка при взаимодействии с файловым хранилищем. Попробуйте позже.',
-            'status': 503
-        }
-
-    except AttributeError as e:
-        logger.error(
-            f"AttributeError, possibly related to form.instance or S3 key generation: {e}", exc_info=True
-        )
-        return {
-            'success': False,
-            'message': 'Внутренняя ошибка сервера при подготовке данных для хранилища.',
-            'status': 500
-        }
-
-    except Exception as e:
-        logger.critical(f"Unexpected error during folder creation (S3 part): {e}", exc_info=True)
-        return {
-            'success': False,
-            'message': 'Произошла непредвиденная ошибка при создании папки.',
-            'status': 500
-        }
+        except Exception as e:
+            logger.critical(f"Unexpected error during folder creation (S3 part): {e}", exc_info=True)
+            return {
+                'success': False,
+                'message': 'Произошла непредвиденная ошибка при создании папки.',
+                'status': 500
+            }
 
 
-def delete_object(storage_object):
+def delete_object_from_db_and_s3(storage_object):
     logger.info(
         f"User: '{storage_object.user}' "
         f"is trying to delete {storage_object.object_type}: '{storage_object}' "

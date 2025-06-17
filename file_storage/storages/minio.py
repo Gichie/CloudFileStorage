@@ -86,13 +86,17 @@ class MinioClient:
             logger.info(f"Directory '{prefix}' empty or does not exists.")
 
         chunk_size = 1000
-        for i in range(0, len(objects_to_delete), chunk_size):
-            chunk = objects_to_delete[i:i + chunk_size]
+        try:
+            for i in range(0, len(objects_to_delete), chunk_size):
+                chunk = objects_to_delete[i:i + chunk_size]
 
-            delete_request = {'Objects': chunk}
+                delete_request = {'Objects': chunk}
 
-            self.s3_client.delete_objects(Bucket=BUCKET_NAME, Delete=delete_request)
-            logger.info(f"{len(chunk)} objects removed")
+                self.s3_client.delete_objects(Bucket=BUCKET_NAME, Delete=delete_request)
+                logger.info(f"{len(chunk)} objects removed")
+        except Exception as e:
+            logger.error(f"Error while deleting objects by prefix: {prefix}. {e}", exc_info=True)
+            raise StorageError
 
     def rename_file(self, old_key, new_key):
         try:
