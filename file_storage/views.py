@@ -295,6 +295,9 @@ class DownloadFileView(LoginRequiredMixin, View):
 
 class DownloadDirectoryView(LoginRequiredMixin, View):
     def get(self, request, directory_id):
+        unencoded_path = request.GET.get("path_param", "")
+        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+
         user = request.user
         directory = get_object_or_404(
             UserFile, id=directory_id, user=user, object_type=FileType.DIRECTORY
@@ -318,11 +321,11 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
         except StorageError as e:
             # Логирование внутри _check_files_exist
             messages.error(request, "Не удалось прочитать некоторые файлы из хранилища")
-            return redirect(FILE_STORAGE_LIST_FILES_URL)
+            return redirect(encoded_path)
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             messages.error(request, 'Произошла ошибка при скачивании архива')
-            return redirect(FILE_STORAGE_LIST_FILES_URL)
+            return redirect(encoded_path)
 
         response['Content-Disposition'] = f'attachment; filename="{encoded_zip_filename}"'
         response['Cache-Control'] = 'no-cache'
