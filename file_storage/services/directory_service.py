@@ -197,40 +197,40 @@ class DirectoryService:
 
         return None
 
+    @staticmethod
+    def get_current_directory_from_path(user: User, unencoded_path: str) -> UserFile | None:
+        """
+        Возвращает объект директории
+        """
+        current_directory = None
 
-def get_current_directory_from_path(user: User, unencoded_path: str) -> UserFile | None:
-    """
-    Возвращает объект директории
-    """
-    current_directory = None
+        if unencoded_path:
+            path_components = [comp for comp in unencoded_path.split('/') if comp and comp not in ['.', '..']]
 
-    if unencoded_path:
-        path_components = [comp for comp in unencoded_path.split('/') if comp and comp not in ['.', '..']]
+            if path_components:
+                name_part = path_components[-1]
+                path = f"user_{user.id}/{unencoded_path}/"
 
-        if path_components:
-            name_part = path_components[-1]
-            path = f"user_{user.id}/{unencoded_path}/"
+                if path:
+                    try:
+                        current_directory = UserFile.objects.get(
+                            user=user,
+                            path=path,
+                            object_type=FileType.DIRECTORY,
+                        )
 
-            if path:
-                try:
-                    current_directory = UserFile.objects.get(
-                        user=user,
-                        path=path,
-                        object_type=FileType.DIRECTORY,
-                    )
+                    except UserFile.DoesNotExist:
+                        logger.warning(
+                            f"User '{user.username}': Directory not found for path component '{name_part}' "
+                            f"Full requested path: '{unencoded_path}'. Raising Http404."
+                        )
+                        raise Http404("Запрошенная директория не найдена или не является директорией.")
+                    except UserFile.MultipleObjectsReturned:
+                        logger.error(
+                            f"User '{user.username}': Multiple objects returned for path component '{name_part}' "
+                            f"Full requested path: '{unencoded_path}'. "
+                            f"This indicates a data integrity issue. Raising Http404."
+                        )
+                        raise Http404("Ошибка при поиске директории (найдено несколько объектов).")
 
-                except UserFile.DoesNotExist:
-                    logger.warning(
-                        f"User '{user.username}': Directory not found for path component '{name_part}' "
-                        f"Full requested path: '{unencoded_path}'. Raising Http404."
-                    )
-                    raise Http404("Запрошенная директория не найдена или не является директорией.")
-                except UserFile.MultipleObjectsReturned:
-                    logger.error(
-                        f"User '{user.username}': Multiple objects returned for path component '{name_part}' "
-                        f"Full requested path: '{unencoded_path}'. "
-                        f"This indicates a data integrity issue. Raising Http404."
-                    )
-                    raise Http404("Ошибка при поиске директории (найдено несколько объектов).")
-
-    return current_directory
+        return current_directory

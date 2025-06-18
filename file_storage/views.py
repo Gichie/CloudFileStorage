@@ -41,7 +41,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
         super().setup(request, *args, **kwargs)
         self.user = request.user
         self.current_path_unencoded = request.GET.get('path', '')
-        self.current_directory = directory_service.get_current_directory_from_path(
+        self.current_directory = DirectoryService.get_current_directory_from_path(
             self.user, self.current_path_unencoded
         )
 
