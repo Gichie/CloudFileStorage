@@ -133,7 +133,7 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
         user = request.user
 
         try:
-            parent_object = directory_service.get_parent_directory(user, parent_id)
+            parent_object = DirectoryService.get_parent_directory(user, parent_id)
         except ParentDirectoryNotFoundError:
             # logging внутри
             return JsonResponse(

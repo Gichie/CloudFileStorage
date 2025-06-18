@@ -17,7 +17,8 @@ class FileType(models.TextChoices):
 
 
 class UserFileManager(models.Manager):
-    def get_all_children_files(self, directory):
+    @staticmethod
+    def get_all_children_files(directory):
         """
         Получает все объекты (файлы и подпапки) внутри указанной директории.
         """
@@ -32,7 +33,8 @@ class UserFileManager(models.Manager):
 
         return all_files
 
-    def object_with_name_exists(self, user, directory_name, parent_object):
+    @staticmethod
+    def object_with_name_exists(user, directory_name, parent_object):
         """
         Проверяет существование объекта с указанным именем в родительской директории
         """
@@ -40,6 +42,15 @@ class UserFileManager(models.Manager):
             user=user,
             name=directory_name,
             parent=parent_object,
+        ).exists()
+
+    @staticmethod
+    def file_exists(user, parent, name):
+        """Проверяет существование файла с указанным именем в родительской директории"""
+        return UserFile.objects.filter(
+            user=user,
+            parent=parent,
+            name=name,
         ).exists()
 
 

@@ -1,11 +1,9 @@
 import logging
 
-from django.db import transaction
-
 from file_storage.exceptions import NameConflictError, StorageError
-from file_storage.services import directory_service
 from file_storage.services.directory_service import DirectoryService
-from file_storage.utils import file_utils
+from file_storage.services.file_service import FileService
+
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +45,7 @@ def handle_file_upload(uploaded_file, user, parent_object, relative_path, cache)
                     'error': e.get_message(),
                     'relative_path': relative_path
                 }
-            except StorageError as e:
+            except StorageError:
                 # Логирвание ниже в create_directories_from_path
                 return {
                     'name': uploaded_file_name,
@@ -70,7 +68,7 @@ def handle_file_upload(uploaded_file, user, parent_object, relative_path, cache)
         else:
             parent_object = cache[dir_path]
 
-    return file_utils.create_file(user, uploaded_file, parent_object, log_prefix), dir_path, parent_object
+    return FileService.create_file(user, uploaded_file, parent_object, log_prefix), dir_path, parent_object
 
 
 def get_message_and_status(results):
