@@ -4,6 +4,7 @@ from django.db import transaction
 
 from file_storage.exceptions import NameConflictError, StorageError
 from file_storage.services import directory_service
+from file_storage.services.directory_service import DirectoryService
 from file_storage.utils import file_utils
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ def handle_file_upload(uploaded_file, user, parent_object, relative_path, cache)
 
         if dir_path not in cache:
             try:
-                parent_object = directory_service.create_directories_from_path(
+                parent_object = DirectoryService.get_parent_or_create_directories_from_path(
                     user, parent_object, directory_path_parts
                 )
 

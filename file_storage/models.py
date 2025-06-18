@@ -32,6 +32,16 @@ class UserFileManager(models.Manager):
 
         return all_files
 
+    def object_with_name_exists(self, user, directory_name, parent_object):
+        """
+        Проверяет существование объекта с указанным именем в родительской директории
+        """
+        return UserFile.objects.filter(
+            user=user,
+            name=directory_name,
+            parent=parent_object,
+        ).exists()
+
 
 class UserFile(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

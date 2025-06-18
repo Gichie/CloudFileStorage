@@ -1,16 +1,15 @@
 import logging
 
 from botocore.exceptions import NoCredentialsError, ClientError, BotoCoreError
-from django.db import IntegrityError, transaction, router, connection
-from django.db.models import Value, F
-from django.db.models.functions import Replace, Concat
+from django.db import IntegrityError, transaction, router
+from django.db.models import Value
+from django.db.models.functions import Replace
 from django.http import Http404, JsonResponse
 
 from cloud_file_storage import settings
 from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError
 from file_storage.models import UserFile, FileType, User
 from file_storage.storages.minio import minio_client
-from file_storage.utils import file_utils
 
 logger = logging.getLogger(__name__)
 
@@ -102,112 +101,101 @@ class DirectoryService:
             user=directory.user, path__startswith=new_path, object_type=FileType.FILE
         ).update(file=Replace('file', Value(old_path), Value(new_path)))
 
+    @staticmethod
+    def delete_obj(storage_object):
+        logger.info(
+            f"User: '{storage_object.user}' "
+            f"is trying to delete {storage_object.object_type}: '{storage_object}' "
+            f"with ID: {storage_object.id}"
+        )
+        if storage_object.object_type == FileType.FILE:
+            storage_object.delete()
 
-def delete_object_from_db_and_s3(storage_object):
-    logger.info(
-        f"User: '{storage_object.user}' "
-        f"is trying to delete {storage_object.object_type}: '{storage_object}' "
-        f"with ID: {storage_object.id}"
-    )
-    if storage_object.object_type == FileType.FILE:
-        storage_object.delete()
+        else:
+            with transaction.atomic():
+                # delete from db
+                files_to_delete = UserFile.objects.get_all_children_files(storage_object)
+                files_to_delete._raw_delete(using=router.db_for_write(UserFile))
 
-    else:
-        with transaction.atomic():
-            # delete from db
-            files_to_delete = UserFile.objects.get_all_children_files(storage_object)
-            files_to_delete._raw_delete(using=router.db_for_write(UserFile))
+                # delete from s3
+                prefix = storage_object.path
+                minio_client.delete_objects_by_prefix(prefix)
 
-            # delete from s3
-            prefix = storage_object.path
-            minio_client.delete_objects_by_prefix(prefix)
+        logger.info(f"User: '{storage_object.user}' deleted {storage_object.object_type} from DB successful")
 
-    logger.info(f"User: '{storage_object.user}' deleted {storage_object.object_type} from DB successful")
+    @staticmethod
+    def get_parent_or_create_directories_from_path(user, parent_object, path_components):
+        """
+        Создает иерархию директорий по указанному пути
+        """
+        current_parent = parent_object
 
-
-def get_parent_directory(user, parent_pk):
-    """
-    Получает родительскую директорию по ID с проверкой прав доступа
-    """
-    if parent_pk:
-        try:
-            parent_object = UserFile.objects.get(
-                pk=parent_pk,
+        for directory_name in path_components:
+            directory_object, created = UserFile.objects.get_or_create(
                 user=user,
+                name=directory_name,
+                parent=current_parent,
                 object_type=FileType.DIRECTORY,
             )
-            logger.info(
-                f"User: '{user.username}' "
-                f"successfully identified parent directory: '{parent_object.name}' "
-                f"(ID: {parent_object.id}) for new directory creation."
-            )
-            return parent_object
 
-        except UserFile.DoesNotExist:
-            logger.warning(
-                f"Parent directory not found. pk={parent_pk} user={user.username} ID: {user.id} "
-                f"Requested parent_pk: '{parent_pk}'. Query was for object_type: {FileType.DIRECTORY}",
-                exc_info=True
-            )
-            raise ParentDirectoryNotFoundError
+            if created:
+                logger.debug(
+                    f"User '{user.username}': Created directory '{directory_name}' "
+                    f"(ID: {directory_object.id}) under parent "
+                    f"'{current_parent.name if current_parent else 'root'}'."
+                )
+                try:
+                    # Создание "директории" в S3/Minio
+                    key = directory_object.get_s3_key_for_directory_marker()
+                    minio_client.create_empty_directory_marker(BUCKET_NAME, key)
+                    logger.debug(f"User '{user.username}': S3 marker created for directory '{key}'.")
+                except (NoCredentialsError, ClientError, BotoCoreError) as e:
+                    logger.error(
+                        f"User '{user.username}': FAILED to create S3 marker for directory '{directory_object.name}' "
+                        f"(ID: {directory_object.id}). Error: {e}",
+                        exc_info=True
+                    )
+                    raise StorageError(f"Ошибка создания папки {directory_name} в S3 хранилище.") from e
 
-        except (ValueError, TypeError):
-            logger.error(
-                f"User={user.username} ID: {user.id} "
-                f"object_type={FileType.DIRECTORY} Invalid parent folder identifier. pk={parent_pk}",
-                exc_info=True
-            )
-            raise InvalidParentIdError
+            current_parent = directory_object
+        return current_parent
 
-    return None
-
-
-def directory_exists(user, directory_name, parent_object):
-    """
-    Проверяет существование директории с указанным именем в родительской директории
-    """
-    return UserFile.objects.filter(
-        user=user,
-        name=directory_name,
-        parent=parent_object,
-    ).exists()
-
-
-def create_directories_from_path(user, parent_object, path_components):
-    """
-    Создает иерархию директорий по указанному пути
-    """
-    current_parent = parent_object
-
-    for directory_name in path_components:
-        directory_object, created = UserFile.objects.get_or_create(
-            user=user,
-            name=directory_name,
-            parent=current_parent,
-            object_type=FileType.DIRECTORY,
-        )
-
-        if created:
-            logger.debug(
-                f"User '{user.username}': Created directory '{directory_name}' "
-                f"(ID: {directory_object.id}) under parent "
-                f"'{current_parent.name if current_parent else 'root'}'."
-            )
+    @staticmethod
+    def get_parent_directory(user, parent_pk):
+        """
+        Получает родительскую директорию по ID с проверкой прав доступа
+        """
+        if parent_pk:
             try:
-                # Создание "директории" в S3/Minio
-                key = directory_object.get_s3_key_for_directory_marker()
-                minio_client.create_empty_directory_marker(BUCKET_NAME, key)
-                logger.debug(f"User '{user.username}': S3 marker created for directory '{key}'.")
-            except (NoCredentialsError, ClientError, BotoCoreError) as e:
-                logger.error(
-                    f"User '{user.username}': FAILED to create S3 marker for directory '{directory_object.name}' "
-                    f"(ID: {directory_object.id}). Error: {e}",
+                parent_object = UserFile.objects.get(
+                    pk=parent_pk,
+                    user=user,
+                    object_type=FileType.DIRECTORY,
+                )
+                logger.info(
+                    f"User: '{user.username}' "
+                    f"successfully identified parent directory: '{parent_object.name}' "
+                    f"(ID: {parent_object.id}) for new directory creation."
+                )
+                return parent_object
+
+            except UserFile.DoesNotExist:
+                logger.warning(
+                    f"Parent directory not found. pk={parent_pk} user={user.username} ID: {user.id} "
+                    f"Requested parent_pk: '{parent_pk}'. Query was for object_type: {FileType.DIRECTORY}",
                     exc_info=True
                 )
-                raise StorageError(f"Ошибка создания папки {directory_name} в S3 хранилище.") from e
+                raise ParentDirectoryNotFoundError
 
-        current_parent = directory_object
-    return current_parent
+            except (ValueError, TypeError):
+                logger.error(
+                    f"User={user.username} ID: {user.id} "
+                    f"object_type={FileType.DIRECTORY} Invalid parent folder identifier. pk={parent_pk}",
+                    exc_info=True
+                )
+                raise InvalidParentIdError
+
+        return None
 
 
 def get_current_directory_from_path(user: User, unencoded_path: str) -> UserFile | None:

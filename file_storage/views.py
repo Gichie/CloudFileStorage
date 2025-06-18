@@ -19,7 +19,7 @@ from file_storage.mixins import QueryParamMixin
 from file_storage.models import UserFile, FileType
 from file_storage.services import directory_service, upload_service
 from file_storage.services.archive_service import ZipStreamGenerator
-from file_storage.services.directory_service import delete_object_from_db_and_s3, directory_exists, DirectoryService
+from file_storage.services.directory_service import DirectoryService
 from file_storage.services.upload_service import get_message_and_status
 from file_storage.storages.minio import minio_client
 from file_storage.utils import ui
@@ -79,27 +79,24 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
         form = DirectoryCreationForm(request.POST, user=request.user)
         if form.is_valid():
             parent_pk = request.POST.get('parent')
-            parent_object_or_response = None
+            parent_object = None
 
             if parent_pk:
-                parent_object_or_response = directory_service.get_parent_directory(self.user,
-                                                                                   parent_pk)
-                if isinstance(parent_object_or_response, JsonResponse):
-                    return parent_object_or_response
+                parent_object = DirectoryService.get_parent_directory(self.user, parent_pk)
 
             directory_name = form.cleaned_data['name']
 
-            if directory_service.directory_exists(self.user, directory_name, parent_object_or_response):
+            if UserFile.objects.object_with_name_exists(self.user, directory_name, parent_object):
                 logger.warning(
                     f"User {request.user.username}: Directory: {directory_name} "
-                    f"already exists in parent '{parent_object_or_response.name if parent_object_or_response else 'root'}'."
+                    f"already exists in parent '{parent_object.name if parent_object else 'root'}'."
                 )
                 return JsonResponse({
                     'status': 'error',
                     'message': f"Файл или папка с именем '{directory_name}' уже существует в текущей директории."
                 }, status=400)
 
-            result = DirectoryService.create(self.user, directory_name, parent_object_or_response)
+            result = DirectoryService.create(self.user, directory_name, parent_object)
 
             if result['success']:
                 return JsonResponse({
@@ -346,7 +343,7 @@ class DeleteView(LoginRequiredMixin, View):
 
         try:
             storage_object = get_object_or_404(UserFile, user=user, id=item_id)
-            delete_object_from_db_and_s3(storage_object)
+            DirectoryService.delete_obj(storage_object)
             messages.success(request, f"{storage_object.get_object_type_display()} успешно удален(а)!")
         except ValidationError as e:
             logger.warning(
@@ -385,7 +382,7 @@ class RenameView(LoginRequiredMixin, View):
             messages.warning(request, "Переименовать объект не удалось. Неправильный ID объекта")
             return redirect(encoded_path)
 
-        if directory_exists(user, new_name, object_instance.parent):
+        if UserFile.objects.object_with_name_exists(user, new_name, object_instance.parent):
             logger.warning(f"User '{user}' tried to save an object with an existing one.")
             messages.warning(request, "Файл или папка с таким именем уже существует")
             return redirect(encoded_path)
