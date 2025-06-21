@@ -17,37 +17,43 @@ class FileType(models.TextChoices):
 
 
 class UserFileManager(models.Manager):
-    @staticmethod
-    def get_all_children_files(directory):
+    def get_all_children_files(self, directory):
         """
         Получает все объекты (файлы и подпапки) внутри указанной директории.
         """
         if directory.object_type == FileType.DIRECTORY:
-            all_files = (UserFile.objects.filter(
+            all_files = (self.filter(
                 user=directory.user, path__startswith=directory.path
             ).select_related('user').only(
                 'id', 'name', 'path', 'object_type', 'file', 'user__id'
             ).order_by('path', 'name'))
         else:
-            return UserFile.objects.none()
+            return self.none()
 
         return all_files
 
-    @staticmethod
-    def object_with_name_exists(user, directory_name, parent_object):
+    def available_directories_to_move(self, user, item_id):
+        item = self.get(user=user, id=item_id)
+        res = self.filter(user=user, object_type=FileType.DIRECTORY).exclude(id=item.parent_id)
+
+        if item.object_type == FileType.DIRECTORY:
+            res = res.exclude(path__startswith=item.path)
+
+        return res
+
+    def object_with_name_exists(self, user, directory_name, parent_object):
         """
         Проверяет существование объекта с указанным именем в родительской директории
         """
-        return UserFile.objects.filter(
+        return self.filter(
             user=user,
             name=directory_name,
             parent=parent_object,
         ).exists()
 
-    @staticmethod
-    def file_exists(user, parent, name):
+    def file_exists(self, user, parent, name):
         """Проверяет существование файла с указанным именем в родительской директории"""
-        return UserFile.objects.filter(
+        return self.filter(
             user=user,
             parent=parent,
             name=name,

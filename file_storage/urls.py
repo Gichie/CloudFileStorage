@@ -1,7 +1,8 @@
 from django.urls import path
 
 from file_storage.views import FileListView, DeleteView, RenameView, \
-    FileUploadAjaxView, DownloadFileView, DownloadDirectoryView, FileSearchView
+    FileUploadAjaxView, DownloadFileView, DownloadDirectoryView, FileSearchView, MoveStorageItemView, \
+    DestinationFolderAjaxView
 
 app_name = 'file_storage'
 
@@ -13,4 +14,10 @@ urlpatterns = [
     path('search/', FileSearchView.as_view(), name='search_files'),
     path('delete/', DeleteView.as_view(), name='delete_item'),
     path('rename/', RenameView.as_view(), name='rename'),
+    path('move/', MoveStorageItemView.as_view(), name='move_item'),
+    path(
+        'get_valid_destination_folders/',
+        DestinationFolderAjaxView.as_view(),
+        name='get_valid_destination_folders'
+    ),
 ]

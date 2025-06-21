@@ -176,36 +176,48 @@
                                 {{ item.file_size|filesizeformat }}{% else %}—{% endif %}</td>
                             <td>{{ item.last_modified|date:"d.m.Y H:i" }}</td>
                             <td>
+                                <!-- Кнопка Переименовать -->
                                 <button type="button" class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal"
                                         data-bs-target="#renameModal" data-item-id="{{ item.id }}"
                                         data-item-name="{{ item.name }}"
+                                        title="Переименовать {{ item.name }}"
                                         data-item-type="{% if item.is_directory %}folder{% else %}file{% endif %}">
                                     <i class="bi bi-pencil-square"></i>
                                 </button>
 
-                                <!-- Кнопка удалить -->
+                                <!-- Кнопка Переместить -->
+                                <button type="button" class="btn btn-sm btn-outline-secondary me-1"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#moveModal" data-item-id="{{ item.id }}"
+                                        data-item-name="{{ item.name }}"
+                                        title="Переместить {{ item.name }}">
+                                    <i class="bi bi-arrows-move"></i>
+                                </button>
+
+                                <!-- Кнопка Удалить -->
                                 <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal"
                                         data-bs-target="#deleteModal" data-item-id="{{ item.id }}"
                                         data-item-name="{{ item.name }}"
+                                        title="Удалить {{ item.name }}"
                                         data-item-type="{% if item.is_directory %}папку{% else %}файл{% endif %}">
                                     <i class="bi bi-trash3"></i>
                                 </button>
 
-                                {% if item %}
-                                    {% if item.object_type == 'file' %}
-                                        <a href="{% url 'file_storage:download_file' item.id %}?path_param={{ current_path_unencoded|urlencode }}"
-                                           class="btn btn-sm btn-outline-success"
-                                           title="Скачать  {{ item.name }}">
-                                            <i class="bi bi-download"></i>
-                                        </a>
-                                    {% elif item.object_type == 'directory' %}
-                                        <a href="{% url 'file_storage:download_directory' item.id %}?path_param={{ current_path_unencoded|urlencode }}"
-                                           class="btn btn-sm btn-outline-success"
-                                           title="Скачать архив {{ item.name }}">
-                                            <i class="bi bi-folder-symlink"></i>
-                                        </a>
-                                    {% endif %}
+                                <!-- Кнопка Скачать -->
+                                {% if item.object_type == 'file' %}
+                                    <a href="{% url 'file_storage:download_file' item.id %}?path_param={{ current_path_unencoded|urlencode }}"
+                                       class="btn btn-sm btn-outline-success"
+                                       title="Скачать {{ item.name }}">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                {% elif item.object_type == 'directory' %}
+                                    <a href="{% url 'file_storage:download_directory' item.id %}?path_param={{ current_path_unencoded|urlencode }}"
+                                       class="btn btn-sm btn-outline-success"
+                                       title="Скачать архив {{ item.name }}">
+                                        <i class="bi bi-folder-symlink"></i>
+                                    </a>
                                 {% endif %}
+
                             </td>
                         </tr>
                     {% endfor %}
@@ -218,6 +230,44 @@
 
             </div>
         {% endif %}
+    </div>
+
+    <!-- Модальное окно "Переместить" -->
+    <div class="modal fade" id="moveModal" tabindex="-1" aria-labelledby="moveModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="post" action="{% url 'file_storage:move_item' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="item_id_to_move" id="moveItemId">
+                    <input type="hidden" name="unencoded_path" value="{{ current_path_unencoded }}">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="moveModalLabel">Переместить элемент</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Переместить "<span id="moveItemName" class="fw-bold"></span>" в:</p>
+                        <div class="mb-3">
+                            <label for="destinationFolderSelect" class="form-label">Выберите папку назначения:</label>
+                            <select class="form-select" id="destinationFolderSelect" name="destination_folder_id">
+                                <option value="">Загрузка...</option>
+                            </select>
+                            <small class="form-text text-muted">
+                                Выберите папку, куда вы хотите переместить элемент.
+                                Если папка не выбрана (остается "Корень"), элемент будет перемещен в корневую директорию
+                                пользователя.
+                            </small>
+                        </div>
+                        <!-- Место для отображения общих ошибок формы, если потребуется -->
+                        <div id="moveItemFormAlerts" class="alert alert-danger" style="display: none;" role="alert">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                        <button type="submit" class="btn btn-primary">Переместить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 
     <!-- Модальное окно "Удалить" -->

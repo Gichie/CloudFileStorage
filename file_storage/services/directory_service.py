@@ -7,7 +7,7 @@ from django.db.models.functions import Replace
 from django.http import Http404, JsonResponse
 
 from cloud_file_storage import settings
-from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError
+from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError, NameConflictError
 from file_storage.models import UserFile, FileType, User
 from file_storage.storages.minio import minio_client
 
@@ -234,3 +234,23 @@ class DirectoryService:
                         raise Http404("Ошибка при поиске директории (найдено несколько объектов).")
 
         return current_directory
+
+    @staticmethod
+    def _update_children_path(storage_item):
+        storage_item.save()
+
+        if storage_item.object_type == FileType.DIRECTORY:
+            for child in storage_item.children.iterator():
+                DirectoryService._update_children_path(child)
+
+    @staticmethod
+    def move(storage_item, destination_folder=None):
+        if UserFile.objects.file_exists(storage_item.user, destination_folder, storage_item.name):
+            raise NameConflictError(
+                "Файл или папка с таким именем уже существует",
+                storage_item.name,
+                destination_folder,
+            )
+        storage_item.parent = destination_folder
+
+        DirectoryService._update_children_path(storage_item)

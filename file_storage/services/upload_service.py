@@ -38,13 +38,6 @@ def handle_file_upload(uploaded_file, user, parent_object, relative_path, cache)
                     user, parent_object, directory_path_parts
                 )
 
-            except NameConflictError as e:
-                return {
-                    'name': e.name,
-                    'status': 'error',
-                    'error': e.get_message(),
-                    'relative_path': relative_path
-                }
             except StorageError:
                 # Логирвание ниже в create_directories_from_path
                 return {

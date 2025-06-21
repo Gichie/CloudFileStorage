@@ -13,11 +13,11 @@ from django.views import View
 from django.views.generic import ListView
 
 from cloud_file_storage import settings
-from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError
+from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError, NameConflictError
 from file_storage.forms import FileUploadForm, DirectoryCreationForm, RenameItemForm
 from file_storage.mixins import QueryParamMixin
 from file_storage.models import UserFile, FileType
-from file_storage.services import directory_service, upload_service
+from file_storage.services import upload_service
 from file_storage.services.archive_service import ZipStreamGenerator
 from file_storage.services.directory_service import DirectoryService
 from file_storage.services.upload_service import get_message_and_status
@@ -46,12 +46,12 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
         )
 
     def get_queryset(self):
-        queryset = UserFile.objects.filter(user=self.user, parent=self.current_directory)
+        self.queryset = UserFile.objects.filter(user=self.user, parent=self.current_directory)
         if not self.current_directory:
             self.current_directory = None
         logger.info(f"User: '{self.user}' has successfully moved to the '{self.current_directory}' directory.")
 
-        return queryset.order_by('object_type', 'name')
+        return self.queryset.order_by('object_type', 'name')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -67,7 +67,12 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
             self.current_path_unencoded, FILE_STORAGE_LIST_FILES_URL
         )
 
-        context['current_folder_id'] = self.current_directory.id if self.current_directory else None
+        if self.current_directory:
+            current_directory_id = self.current_directory.id
+        else:
+            current_directory_id = None
+
+        context['current_folder_id'] = current_directory_id
 
         if 'form_create_folder' not in context:
             context['form_create_folder'] = DirectoryCreationForm(user=self.user)
@@ -303,7 +308,7 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
 
         if not minio_client.check_files_exist(all_files):
             messages.error(request, "Не удалось прочитать некоторые файлы из хранилища")
-            return redirect(FILE_STORAGE_LIST_FILES_URL)
+            return redirect(encoded_path)
 
         zip_generator = ZipStreamGenerator(directory, all_files)
 
@@ -432,3 +437,75 @@ class RenameView(LoginRequiredMixin, View):
             messages.warning(request, form.errors["name"][0])
 
         return redirect(encoded_path)
+
+
+class MoveStorageItemView(LoginRequiredMixin, View):
+    def post(self, request):
+        item_id = request.POST.get('item_id_to_move')
+        unencoded_path = request.POST.get('unencoded_path')
+        destination_folder_id = request.POST.get('destination_folder_id')
+
+        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+
+        storage_item = UserFile.objects.get(user=request.user, id=item_id)
+
+        if destination_folder_id:
+            try:
+                destination_folder = UserFile.objects.get(
+                    user=request.user, id=destination_folder_id, object_type=FileType.DIRECTORY
+                )
+            except ValidationError as e:
+                logger.warning(
+                    f"User: '{request.user}'. Invalid type received. UUID required. {type(item_id)} received. {e}",
+                    exc_info=True
+                )
+                messages.warning(request, "Неправильный ID объекта")
+            except UserFile.DoesNotExist as e:
+                logger.warning(
+                    f"User: '{request.user}'. "
+                    f"Storage_object with ID: {destination_folder_id} does not exists. {e}",
+                    exc_info=True,
+                )
+                messages.warning(request, "Такой папки не существует")
+            except Exception as e:
+                logger.error(
+                    f"User: '{request.user}'. "
+                    f"Unknown error. Storage_object with ID: {destination_folder_id}. {e}",
+                    exc_info=True,
+                )
+                messages.error(request, "Неизвестная ошибка")
+        else:
+            destination_folder = None
+
+        try:
+            with transaction.atomic():
+                DirectoryService.move(storage_item, destination_folder)
+
+        except NameConflictError as e:
+            logger.warning(e.get_message(), exc_info=True)
+            messages.warning(request, e.get_message())
+        except Exception as e:
+            logger.error(
+                f"User: '{request.user}'. "
+                f"Unknown error. Storage_object with ID: {destination_folder_id}. {e}",
+                exc_info=True,
+            )
+            messages.error(request, "Неизвестная ошибка")
+
+        return redirect(encoded_path)
+
+
+class DestinationFolderAjaxView(LoginRequiredMixin, View):
+    def get(self, request):
+        item_id = request.GET.get('item_id')
+        if not item_id:
+            return JsonResponse(
+                {'error': 'Объект для перемещения не передан'},
+                status=400,
+            )
+        available_directories = UserFile.objects.available_directories_to_move(request.user, item_id)
+        data = []
+        for directory in available_directories:
+            data.append({"id": directory.id, "display_name": directory.get_display_path})
+
+        return JsonResponse(data, safe=False, status=200)

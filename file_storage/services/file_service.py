@@ -57,3 +57,6 @@ class FileService:
                 'status': 'error',
                 'error': 'Ошибка при загрузке файла в хранилище'
             }
+
+
+

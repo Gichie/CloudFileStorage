@@ -12,6 +12,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const uploadProgressBar = document.getElementById('uploadProgressBar');
         const uploadMessages = document.getElementById('uploadMessages');
 
+        const moveModalElement = document.getElementById('moveModal');
+
         let filesToUpload = []; // Массив для хранения выбранных файлов
 
         function getCookie(name) {
@@ -30,6 +32,126 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         const csrftoken = getCookie('csrftoken');
+
+        if (moveModalElement) {
+            const moveModal = new bootstrap.Modal(moveModalElement);
+            const destinationSelect = moveModalElement.querySelector('#destinationFolderSelect');
+            const moveItemIdInput = moveModalElement.querySelector('#moveItemId'); // Скрытое поле для ID элемента
+            const moveItemNameSpan = moveModalElement.querySelector('#moveItemName'); // Span для имени элемента
+            const formAlerts = moveModalElement.querySelector('#moveItemFormAlerts'); // Для сообщений об ошибках
+            const submitMoveButton = moveModalElement.querySelector('form button[type="submit"]'); // Кнопка "Переместить"
+
+            moveModalElement.addEventListener('show.bs.modal', async function (event) {
+                const button = event.relatedTarget; // Кнопка, которая вызвала модальное окно
+                const itemIdToMove = button.getAttribute('data-item-id');
+                const itemName = button.getAttribute('data-item-name');
+
+                // 1. Обновить информацию о перемещаемом элементе в модальном окне
+                if (moveItemIdInput) {
+                    moveItemIdInput.value = itemIdToMove;
+                }
+                if (moveItemNameSpan) {
+                    moveItemNameSpan.textContent = itemName;
+                }
+
+                // 2. Сбросить состояние перед загрузкой
+                if (destinationSelect) {
+                    destinationSelect.innerHTML = '<option value="">Загрузка папок...</option>';
+                    destinationSelect.disabled = true;
+                }
+                if (formAlerts) {
+                    formAlerts.style.display = 'none';
+                    formAlerts.textContent = '';
+                }
+                if (submitMoveButton) {
+                    submitMoveButton.disabled = true; // Деактивируем кнопку отправки пока грузятся папки
+                }
+
+                // 3. Сформировать URL для API
+                const apiUrl = `/get_valid_destination_folders/?item_id=${encodeURIComponent(itemIdToMove)}`;
+
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'GET',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest', // Часто используется для AJAX запросов
+                            'Accept': 'application/json',
+                        }
+                    });
+
+                    if (!response.ok) {
+                        let errorMsg = `Ошибка сети: ${response.status}`;
+                        try {
+                            const errorData = await response.json();
+                            errorMsg = errorData.error || errorMsg; // Если сервер вернул JSON с полем error
+                        } catch (e) {
+                            // Ошибка парсинга JSON, используем стандартное сообщение
+                        }
+                        throw new Error(errorMsg);
+                    }
+
+                    const folders = await response.json();
+
+                    // 4. Очистить и заполнить select новыми данными
+                    if (destinationSelect) {
+                        destinationSelect.innerHTML = ''; // Очищаем старые опции
+
+                        // Добавляем опцию "Корень" (если это предусмотрено твоей логикой)
+                        // Убедись, что твой бэкенд правильно обрабатывает пустое значение для destination_folder_id
+                        const rootOption = document.createElement('option');
+                        rootOption.value = ""; // Пустое значение для корня
+                        rootOption.textContent = "Корень";
+                        destinationSelect.appendChild(rootOption);
+
+                        if (folders && folders.length > 0) {
+                            folders.forEach(folder => {
+                                const option = document.createElement('option');
+                                option.value = folder.id; // 'id' из JSON ответа
+                                option.textContent = folder.display_name; // 'display_name' из JSON ответа
+                                destinationSelect.appendChild(option);
+                            });
+                        } else {
+                        }
+                        destinationSelect.disabled = false;
+                        if (submitMoveButton) {
+                            submitMoveButton.disabled = false;
+                        }
+                    }
+
+                } catch (error) {
+                    console.error("Ошибка при загрузке списка папок:", error);
+                    if (destinationSelect) {
+                        destinationSelect.innerHTML = '<option value="">Ошибка загрузки папок</option>';
+                        // destinationSelect.disabled = true; // Оставляем disabled или нет - по усмотрению
+                    }
+                    if (formAlerts) {
+                        formAlerts.textContent = error.message || 'Не удалось загрузить список папок для перемещения. Попробуйте еще раз.';
+                        formAlerts.style.display = 'block';
+                    }
+                    // Кнопка submit останется disabled, если была деактивирована
+                }
+            });
+
+            // Опционально: сбросить состояние select при закрытии модального окна,
+            // чтобы при следующем открытии не было видно старых данных на мгновение
+            moveModalElement.addEventListener('hidden.bs.modal', function () {
+                if (destinationSelect) {
+                    destinationSelect.innerHTML = '<option value="">Выберите папку...</option>';
+                    destinationSelect.disabled = true;
+                }
+                if (formAlerts) {
+                    formAlerts.style.display = 'none';
+                    formAlerts.textContent = '';
+                }
+                if (moveItemIdInput) {
+                    moveItemIdInput.value = ''; // Очищаем ID
+                }
+                if (submitMoveButton) {
+                    submitMoveButton.disabled = true;
+                }
+            });
+        }
 
         // --- Обработчики для выбора файлов ---
         if (dropZone) {
