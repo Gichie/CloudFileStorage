@@ -132,5 +132,7 @@ class MinioClient:
                     logger.error(f"Error renaming object from '{old_key}' to '{new_key}': {e}",
                                  exc_info=True)
 
+    def move_object(self, old_key, new_key):
+        self.rename_directory(old_key, new_key)
 
 minio_client = MinioClient()

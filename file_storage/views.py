@@ -448,6 +448,7 @@ class MoveStorageItemView(LoginRequiredMixin, View):
         encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
 
         storage_item = UserFile.objects.get(user=request.user, id=item_id)
+        old_key = storage_item.path
 
         if destination_folder_id:
             try:
@@ -480,6 +481,17 @@ class MoveStorageItemView(LoginRequiredMixin, View):
         try:
             with transaction.atomic():
                 DirectoryService.move(storage_item, destination_folder)
+                new_key = storage_item.path
+                try:
+                    minio_client.move_object(old_key, new_key)
+                except StorageError as e:
+                    logger.error(f"User '{request.user}'. Error getting s3/minio keys. {e}", exc_info=True)
+                    messages.error(request, "Переместить объект не получилось. "
+                                            "Не удалось получить ключи для удаления из хранилища")
+                except Exception as e:
+                    logger.warning(f"User: '{request.user}'. Error while moving '{storage_item.object_type}'"
+                                   f"with ID {storage_item.id} to {destination_folder.id}.\n{e}", exc_info=True)
+                    messages.error(request, f"Произошла неизвестная ошибка при перемещении")
 
         except NameConflictError as e:
             logger.warning(e.get_message(), exc_info=True)
