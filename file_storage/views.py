@@ -446,53 +446,39 @@ class MoveStorageItemView(LoginRequiredMixin, View):
         destination_folder_id = request.POST.get('destination_folder_id')
 
         encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+        try:
+            storage_item = UserFile.objects.get(user=request.user, id=item_id)
+            old_key = storage_item.path
 
-        storage_item = UserFile.objects.get(user=request.user, id=item_id)
-        old_key = storage_item.path
-
-        if destination_folder_id:
-            try:
+            if destination_folder_id:
                 destination_folder = UserFile.objects.get(
                     user=request.user, id=destination_folder_id, object_type=FileType.DIRECTORY
                 )
-            except ValidationError as e:
-                logger.warning(
-                    f"User: '{request.user}'. Invalid type received. UUID required. {type(item_id)} received. {e}",
-                    exc_info=True
-                )
-                messages.warning(request, "Неправильный ID объекта")
-            except UserFile.DoesNotExist as e:
-                logger.warning(
-                    f"User: '{request.user}'. "
-                    f"Storage_object with ID: {destination_folder_id} does not exists. {e}",
-                    exc_info=True,
-                )
-                messages.warning(request, "Такой папки не существует")
-            except Exception as e:
-                logger.error(
-                    f"User: '{request.user}'. "
-                    f"Unknown error. Storage_object with ID: {destination_folder_id}. {e}",
-                    exc_info=True,
-                )
-                messages.error(request, "Неизвестная ошибка")
-        else:
-            destination_folder = None
+            else:
+                destination_folder = None
 
-        try:
             with transaction.atomic():
                 DirectoryService.move(storage_item, destination_folder)
                 new_key = storage_item.path
-                try:
-                    minio_client.move_object(old_key, new_key)
-                except StorageError as e:
-                    logger.error(f"User '{request.user}'. Error getting s3/minio keys. {e}", exc_info=True)
-                    messages.error(request, "Переместить объект не получилось. "
-                                            "Не удалось получить ключи для удаления из хранилища")
-                except Exception as e:
-                    logger.warning(f"User: '{request.user}'. Error while moving '{storage_item.object_type}'"
-                                   f"with ID {storage_item.id} to {destination_folder.id}.\n{e}", exc_info=True)
-                    messages.error(request, f"Произошла неизвестная ошибка при перемещении")
+                minio_client.move_object(old_key, new_key)
 
+        except ValidationError as e:
+            logger.warning(
+                f"User: '{request.user}'. Invalid type received. UUID required. {type(item_id)} received. {e}",
+                exc_info=True
+            )
+            messages.warning(request, "Неправильный ID объекта")
+        except UserFile.DoesNotExist as e:
+            logger.warning(
+                f"User: '{request.user}'. "
+                f"Storage_object with ID: {destination_folder_id} does not exists. {e}",
+                exc_info=True,
+            )
+            messages.warning(request, "Такого объекта не существует")
+        except StorageError as e:
+            logger.error(f"User '{request.user}'. Error getting s3/minio keys. {e}", exc_info=True)
+            messages.error(request, "Переместить объект не получилось. "
+                                    "Не удалось получить ключи для удаления из хранилища")
         except NameConflictError as e:
             logger.warning(e.get_message(), exc_info=True)
             messages.warning(request, e.get_message())
