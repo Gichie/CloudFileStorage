@@ -1,4 +1,3 @@
-import json
 import logging
 import urllib
 
@@ -7,13 +6,13 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.db import transaction, IntegrityError
-from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, HttpResponse
+from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, HttpResponse, Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.views import View
 from django.views.generic import ListView
 
 from cloud_file_storage import settings
-from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError, NameConflictError
+from file_storage.exceptions import (StorageError, NameConflictError)
 from file_storage.forms import FileUploadForm, DirectoryCreationForm, RenameItemForm
 from file_storage.mixins import QueryParamMixin
 from file_storage.models import UserFile, FileType
@@ -49,7 +48,8 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
         self.queryset = UserFile.objects.filter(user=self.user, parent=self.current_directory)
         if not self.current_directory:
             self.current_directory = None
-        logger.info(f"User: '{self.user}' has successfully moved to the '{self.current_directory}' directory.")
+        logger.info(
+            f"User: '{self.user}' has successfully moved to the '{self.current_directory}' directory.")
 
         return self.queryset.order_by('object_type', 'name')
 
@@ -80,7 +80,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
         return context
 
     def post(self, request, *args, **kwargs):
-        """Обработка создания новой папки"""
+        """Обработка создания новой папки."""
         form = DirectoryCreationForm(request.POST, user=request.user)
         if form.is_valid():
             parent_pk = request.POST.get('parent')
@@ -98,7 +98,8 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
                 )
                 return JsonResponse({
                     'status': 'error',
-                    'message': f"Файл или папка с именем '{directory_name}' уже существует в текущей директории."
+                    'message': f"Файл или папка с именем '{directory_name}' "
+                               f"уже существует в текущей директории."
                 }, status=400)
 
             result = DirectoryService.create(self.user, directory_name, parent_object)
@@ -122,10 +123,11 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
         else:
             logger.warning(
                 f"User '{self.user.username}': Form validation failed. "
-                f"Errors: {json.dumps(form.errors.get_json_data(escape_html=False), ensure_ascii=False)}"
+                f"Errors: {form.errors['name'].data}"
             )
             return JsonResponse(
-                {'status': 'error', 'message': f'{form.errors["name"][0]}', 'errors': form.errors.as_json()},
+                {'status': 'error', 'message': f'{form.errors["name"][0]}',
+                 'errors': form.errors.as_json()},
                 status=400
             )
 
@@ -137,38 +139,21 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
         files = request.FILES.getlist('files')
         user = request.user
 
-        try:
-            parent_object = DirectoryService.get_parent_directory(user, parent_id)
-        except ParentDirectoryNotFoundError:
-            # logging внутри
-            return JsonResponse(
-                {'error': 'Ошибка. Родительская папка не найдена'},
-                status=400,
-            )
-        except InvalidParentIdError:
-            # logging внутри
-            return JsonResponse(
-                {'error': 'Ошибка. Некорректный идентификатор родительской папки.'},
-                status=400
-            )
-        except Exception as e:
-            logger.error(f"Unexpected error. User: {user}. {e}")
-            return JsonResponse(
-                {'error': 'Неизвестная ошибка, попробуйте позже'},
-                status=500
-            )
+        parent_object, error_response = DirectoryService.get_parent_directory(user, parent_id)
+        if error_response:
+            return error_response
 
         num_files = len(files)
 
-        if relative_paths:
-            if num_files != len(relative_paths):
-                logger.error(f"{self.__class__.__name__} User: '{user}'. Количество файлов и путей не совпадает.")
-                return JsonResponse({'error': 'Данные о путях файлов некорректны.'}, status=400)
+        if relative_paths and num_files != len(relative_paths):
+            logger.error(
+                f"User: '{user}'. Количество файлов и путей не совпадает.")
+            return JsonResponse({'error': 'Данные о путях файлов некорректны.'}, status=400)
         else:
             relative_paths = [None for i in range(num_files)]
 
         logger.info(
-            f"{self.__class__.__name__}: User '{user.username}' ID: {user.id} initiated {num_files} files upload. "
+            f"User: '{user.username}' ID: {user.id} initiated {num_files} files upload. "
             f"Target parent_id: '{parent_id}'."
         )
 
@@ -189,18 +174,18 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                         result, dir_path_cache, parent_object_cache = upload_service.handle_file_upload(
                             uploaded_file, user, parent_object, rel_path, cache
                         )
-                    if result and 'error' not in result and dir_path_cache and dir_path_cache not in cache:
+                    if (result and 'error' not in result and
+                            dir_path_cache and dir_path_cache not in cache):
                         cache[dir_path_cache] = parent_object_cache
 
-                except Exception as e:
+                except Exception:
                     result = {
                         'name': uploaded_file.name,
                         'status': 'error',
-                        'error': f'Ошибка загрузки файла или папки'
+                        'error': 'Ошибка загрузки файла или папки'
                     }
 
-                if result:
-                    results.append(result)
+                results.append(result)
 
             else:
                 error_messages = []
@@ -273,17 +258,22 @@ class DownloadFileView(LoginRequiredMixin, View):
                     },
                     ExpiresIn=1800
                 )
-                logger.info(f"File downloaded successfully. s3_key: {s3_key}, presigned_url: {presigned_url}")
+                logger.info(
+                    f"File downloaded successfully. s3_key: {s3_key}, presigned_url: {presigned_url}")
                 return HttpResponseRedirect(presigned_url)
 
             else:
-                logger.warning(f"User: '{user_file.user}. File does not found in s3/minio storage'",
-                               exc_info=True)
+                logger.warning(
+                    f"User: '{user_file.user}. File does not found in s3/minio storage'",
+                    exc_info=True
+                )
                 messages.warning(request, f"Такого файла: '{user_file}' не существует")
 
         except ClientError as e:
             logger.error(f"Error generating presigned URL for s3_key: {s3_key}: {e}")
-            messages.error(request, "Произошла ошибка при обращении к хранилищу, попробуйте позже")
+            messages.error(
+                request, "Произошла ошибка при обращении к хранилищу, попробуйте позже"
+            )
         except ParamValidationError as e:
             logger.error(f"{e}")
             messages.error(request, "Произошла ошибка при запросе к хранилищу")
@@ -319,7 +309,7 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
             response = StreamingHttpResponse(
                 zip_generator.generate(), content_type='application/zip'
             )
-        except StorageError as e:
+        except StorageError:
             # Логирование внутри _check_files_exist
             messages.error(request, "Не удалось прочитать некоторые файлы из хранилища")
             return redirect(encoded_path)
@@ -349,15 +339,18 @@ class DeleteView(LoginRequiredMixin, View):
         try:
             storage_object = get_object_or_404(UserFile, user=user, id=item_id)
             DirectoryService.delete_obj(storage_object)
-            messages.success(request, f"{storage_object.get_object_type_display()} успешно удален(а)!")
-        except ValidationError as e:
+            messages.success(
+                request, f"{storage_object.get_object_type_display()} успешно удален(а)!"
+            )
+        except ValidationError:
             logger.warning(
                 f"User '{user}'. Invalid type received. UUID required. {type(item_id)} received.",
                 exc_info=True
             )
             messages.warning(request, "Удалить объект не удалось. Неправильный ID объекта")
         except StorageError as e:
-            logger.error(f"User '{user}'. Error while deleting '{storage_object}' from s3. {e}", exc_info=True)
+            logger.error(f"User '{user}'. Error while deleting '{storage_object}' from s3. {e}",
+                         exc_info=True)
             messages.error(request, "Удалить объект не получилось.")
 
         return redirect(encoded_path)
@@ -374,56 +367,51 @@ class RenameView(LoginRequiredMixin, View):
 
         if not item_id:
             logger.warning(f"User '{user}'. Object ID was not transmitted")
-            messages.error(request, "Не удалось определить объект для переименования (ID отсутствует).")
+            messages.error(
+                request, "Не удалось определить объект для переименования (ID отсутствует)."
+            )
             return redirect(encoded_path)
 
         try:
             object_instance = get_object_or_404(UserFile, user=user, id=item_id)
-        except ValidationError as e:
+        except (ValidationError, Http404) as e:
             logger.warning(
                 f"User '{user}'. Invalid type received. UUID required. {type(item_id)} received. {e}",
                 exc_info=True
             )
-            messages.warning(request, "Переименовать объект не удалось. Неправильный ID объекта")
+            messages.warning(
+                request, "Переименовать объект не удалось. "
+                         "Неправильный ID объекта или объект не найден."
+            )
             return redirect(encoded_path)
 
         if UserFile.objects.object_with_name_exists(user, new_name, object_instance.parent):
             logger.warning(f"User '{user}' tried to save an object with an existing one.")
-            messages.warning(request, "Файл или папка с таким именем уже существует")
+            messages.warning(request, "Файл или папка с таким именем уже существует.")
             return redirect(encoded_path)
 
         form = RenameItemForm(request.POST, instance=object_instance)
         if form.is_valid():
             try:
-                with transaction.atomic():
-                    if object_instance.object_type == FileType.FILE:
-                        old_minio_key = object_instance.file.name
-                    else:
-                        old_minio_key = object_instance.path
+                DirectoryService.rename(object_instance, form)
 
-                    form.save()
-                    new_minio_key = object_instance.get_full_path()
-
-                    if object_instance.object_type == FileType.FILE:
-                        minio_client.rename_file(old_minio_key, new_minio_key)
-
-                    elif object_instance.object_type == FileType.DIRECTORY:
-                        if old_minio_key and new_minio_key and old_minio_key != new_minio_key:
-                            DirectoryService.update_children_paths(
-                                object_instance, old_minio_key, new_minio_key
-                            )
-                        minio_client.rename_directory(old_minio_key, new_minio_key)
-
-                    logger.info(f"User '{user}' renamed {object_instance.object_type} "
-                                f"to '{form.cleaned_data['name']}'")
-                    messages.success(request,
-                                     f"{object_instance.get_object_type_display()} успешно переименован(а)")
+                logger.info(f"User '{user}' renamed {object_instance.object_type} "
+                            f"to '{form.cleaned_data['name']}'")
+                messages.success(
+                    request,
+                    f"{object_instance.get_object_type_display()} успешно переименован(а)"
+                )
 
             except IntegrityError as e:
-                logger.warning(f"User: '{user}'. Error while renaming object. '{object_instance.object_type}' "
-                               f"with that name already exists with ID {object_instance.id}.\n{e}. ", exc_info=True)
-                messages.warning(request,
-                                 f"{object_instance.get_object_type_display()} с таким именем уже существует")
+                logger.warning(
+                    f"User: '{user}'. Error while renaming object. '{object_instance.object_type}' "
+                    f"with that name already exists with ID {object_instance.id}.\n{e}. ",
+                    exc_info=True
+                )
+                messages.warning(
+                    request,
+                    f"{object_instance.get_object_type_display()} с таким именем уже существует"
+                )
             except StorageError as e:
                 logger.error(f"User '{user}'. Error getting s3/minio keys. {e}", exc_info=True)
                 messages.error(request, "Переименовать объект не получилось. "
@@ -431,10 +419,12 @@ class RenameView(LoginRequiredMixin, View):
             except Exception as e:
                 logger.warning(f"User: '{user}'. Error while renaming '{object_instance.object_type}'"
                                f"with ID {object_instance.id}.\n{e}", exc_info=True)
-                messages.error(request, f"Произошла ошибка при переименовании")
+                messages.error(request, "Произошла ошибка при переименовании")
 
         else:
-            messages.warning(request, form.errors["name"][0])
+            messages.warning(
+                request, form.errors.get('name', ["Неизвестная ошибка валидации имени."])[0]
+            )
 
         return redirect(encoded_path)
 
@@ -464,7 +454,8 @@ class MoveStorageItemView(LoginRequiredMixin, View):
 
         except ValidationError as e:
             logger.warning(
-                f"User: '{request.user}'. Invalid type received. UUID required. {type(item_id)} received. {e}",
+                f"User: '{request.user}'. "
+                f"Invalid type received. UUID required. {type(item_id)} received. {e}",
                 exc_info=True
             )
             messages.warning(request, "Неправильный ID объекта")

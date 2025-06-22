@@ -7,7 +7,7 @@ from django.db.models.functions import Replace
 from django.http import Http404, JsonResponse
 
 from cloud_file_storage import settings
-from file_storage.exceptions import StorageError, ParentDirectoryNotFoundError, InvalidParentIdError, NameConflictError
+from file_storage.exceptions import StorageError, NameConflictError
 from file_storage.models import UserFile, FileType, User
 from file_storage.storages.minio import minio_client
 
@@ -51,7 +51,8 @@ class DirectoryService:
             }
 
         except NoCredentialsError:
-            logger.critical("S3/Minio credentials not found. Cannot create directory marker.", exc_info=True)
+            logger.critical("S3/Minio credentials not found. Cannot create directory marker.",
+                            exc_info=True)
             return {
                 'success': False,
                 'message': 'Ошибка конфигурации сервера: Не удалось подключиться к хранилищу файлов.',
@@ -60,8 +61,9 @@ class DirectoryService:
 
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code")
-            logger.error(f"S3 ClientError while creating directory marker '{key}': {e} (Code: {error_code})",
-                         exc_info=True)
+            logger.error(
+                f"S3 ClientError while creating directory marker '{key}': {e} (Code: {error_code})",
+                exc_info=True)
             return JsonResponse({
                 'success': False,
                 'message': 'Ошибка хранилища. Не удалось создать папку в облаке.'
@@ -77,7 +79,8 @@ class DirectoryService:
 
         except AttributeError as e:
             logger.error(
-                f"AttributeError, possibly related to form.instance or S3 key generation: {e}", exc_info=True
+                f"AttributeError, possibly related to form.instance or S3 key generation: {e}",
+                exc_info=True
             )
             return {
                 'success': False,
@@ -94,12 +97,33 @@ class DirectoryService:
             }
 
     @staticmethod
-    def update_children_paths(directory, old_path, new_path):
+    def _update_children_paths(directory, old_path, new_path):
         children = UserFile.objects.filter(user=directory.user, path__startswith=old_path)
         children.update(path=Replace('path', Value(old_path), Value(new_path)))
         UserFile.objects.filter(
             user=directory.user, path__startswith=new_path, object_type=FileType.FILE
         ).update(file=Replace('file', Value(old_path), Value(new_path)))
+
+    @staticmethod
+    def rename(object_instance, form):
+        with transaction.atomic():
+            if object_instance.object_type == FileType.FILE:
+                old_minio_key = object_instance.file.name
+            else:
+                old_minio_key = object_instance.path
+
+            form.save()
+            new_minio_key = object_instance.get_full_path()
+
+            if object_instance.object_type == FileType.FILE:
+                minio_client.rename_file(old_minio_key, new_minio_key)
+
+            else:
+                if old_minio_key and new_minio_key and old_minio_key != new_minio_key:
+                    DirectoryService._update_children_paths(
+                        object_instance, old_minio_key, new_minio_key
+                    )
+                minio_client.rename_directory(old_minio_key, new_minio_key)
 
     @staticmethod
     def delete_obj(storage_object):
@@ -121,7 +145,8 @@ class DirectoryService:
                 prefix = storage_object.path
                 minio_client.delete_objects_by_prefix(prefix)
 
-        logger.info(f"User: '{storage_object.user}' deleted {storage_object.object_type} from DB successful")
+        logger.info(
+            f"User: '{storage_object.user}' deleted {storage_object.object_type} from DB successful")
 
     @staticmethod
     def get_parent_or_create_directories_from_path(user, parent_object, path_components):
@@ -163,7 +188,8 @@ class DirectoryService:
     @staticmethod
     def get_parent_directory(user, parent_pk):
         """
-        Получает родительскую директорию по ID с проверкой прав доступа
+        Получает родительскую директорию по ID с проверкой прав доступа.
+        Возвращает (parent_object, None) при успехе или (None, JsonResponse) при ошибке.
         """
         if parent_pk:
             try:
@@ -177,7 +203,7 @@ class DirectoryService:
                     f"successfully identified parent directory: '{parent_object.name}' "
                     f"(ID: {parent_object.id}) for new directory creation."
                 )
-                return parent_object
+                return parent_object, None
 
             except UserFile.DoesNotExist:
                 logger.warning(
@@ -185,7 +211,10 @@ class DirectoryService:
                     f"Requested parent_pk: '{parent_pk}'. Query was for object_type: {FileType.DIRECTORY}",
                     exc_info=True
                 )
-                raise ParentDirectoryNotFoundError
+                return None, JsonResponse(
+                    {'error': 'Ошибка. Родительская папка не найдена'},
+                    status=400,
+                )
 
             except (ValueError, TypeError):
                 logger.error(
@@ -193,9 +222,19 @@ class DirectoryService:
                     f"object_type={FileType.DIRECTORY} Invalid parent folder identifier. pk={parent_pk}",
                     exc_info=True
                 )
-                raise InvalidParentIdError
+                return None, JsonResponse(
+                    {'error': 'Ошибка. Некорректный идентификатор родительской папки.'},
+                    status=400
+                )
 
-        return None
+            except Exception as e:
+                logger.error(f"Unexpected error. User: {user}. {e}")
+                return None, JsonResponse(
+                    {'error': 'Неизвестная ошибка, попробуйте позже'},
+                    status=500
+                )
+
+        return None, None
 
     @staticmethod
     def get_current_directory_from_path(user: User, unencoded_path: str) -> UserFile | None:
@@ -205,7 +244,8 @@ class DirectoryService:
         current_directory = None
 
         if unencoded_path:
-            path_components = [comp for comp in unencoded_path.split('/') if comp and comp not in ['.', '..']]
+            path_components = [comp for comp in unencoded_path.split('/') if
+                               comp and comp not in ['.', '..']]
 
             if path_components:
                 name_part = path_components[-1]

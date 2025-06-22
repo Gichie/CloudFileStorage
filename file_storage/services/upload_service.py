@@ -1,9 +1,8 @@
 import logging
 
-from file_storage.exceptions import NameConflictError, StorageError
+from file_storage.exceptions import StorageError
 from file_storage.services.directory_service import DirectoryService
 from file_storage.services.file_service import FileService
-
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +60,9 @@ def handle_file_upload(uploaded_file, user, parent_object, relative_path, cache)
         else:
             parent_object = cache[dir_path]
 
-    return FileService.create_file(user, uploaded_file, parent_object, log_prefix), dir_path, parent_object
+    return FileService.create_file(
+        user, uploaded_file, parent_object, log_prefix
+    ), dir_path, parent_object
 
 
 def get_message_and_status(results):

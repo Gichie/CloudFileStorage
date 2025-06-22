@@ -25,11 +25,3 @@ class NameConflictError(Exception):
 class StorageError(Exception):
     pass
 
-
-class ParentDirectoryNotFoundError(Exception):
-    pass
-
-
-class InvalidParentIdError(Exception):
-    pass
-

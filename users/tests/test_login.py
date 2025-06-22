@@ -91,7 +91,9 @@ class TestLogin(TestCase):
 
         response = self.client.post(self.logout_url)
 
-        self.assertRedirects(response, self.login_url, status_code=302, fetch_redirect_response=True)
+        self.assertRedirects(
+            response, self.login_url, status_code=302, fetch_redirect_response=True
+        )
 
         self.assertNotIn(SESSION_KEY, self.client.session)
 

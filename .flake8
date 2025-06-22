@@ -1,0 +1,16 @@
+[flake8]
+max-line-length = 104
+max-complexity = 10
+exclude =
+    .git,
+    __pycache__,
+    docs/source/conf.py,
+    old,
+    build,
+    dist,
+    venv
+
+docstring-convention = pep257
+# Для flake8-bugbear
+# B950: line too long (soft check, use max-line-length for hard check)
+# extend-ignore = B950
