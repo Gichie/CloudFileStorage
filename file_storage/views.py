@@ -1,18 +1,24 @@
 import logging
 import urllib
+from functools import wraps
+from typing import Type, Any, Callable
 
 from botocore.exceptions import ClientError, ParamValidationError
 from django.contrib import messages
+from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction, IntegrityError
-from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, HttpResponse, Http404
+from django.db.models import QuerySet
+from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, Http404, HttpRequest
 from django.shortcuts import get_object_or_404, redirect
 from django.views import View
 from django.views.generic import ListView
 
 from cloud_file_storage import settings
-from file_storage.exceptions import (StorageError, NameConflictError)
+from file_storage.exceptions import (StorageError, NameConflictError, DatabaseError, InvalidPathError)
 from file_storage.forms import FileUploadForm, DirectoryCreationForm, RenameItemForm
 from file_storage.mixins import QueryParamMixin
 from file_storage.models import UserFile, FileType
@@ -26,35 +32,113 @@ from file_storage.utils.path_utils import encode_path_for_url
 
 logger = logging.getLogger(__name__)
 
-FILE_STORAGE_LIST_FILES_URL = 'file_storage:list_files'
-FILE_LIST_TEMPLATE = 'file_storage/list_files.html'
+FILE_STORAGE_LIST_FILES_URL: str = 'file_storage:list_files'
+FILE_LIST_TEMPLATE: str = 'file_storage/list_files.html'
+
+
+def handle_service_exceptions(
+        view_func: Callable[[HttpRequest, ...], Any]
+) -> Callable[[HttpRequest, ...], Any]:
+    """Декоратор для обработки общих исключений, возникающих в view-функциях.
+
+    Ловит ``UserFile.DoesNotExist``, ``ValueError``, ``TypeError`` и любые другие ``Exception``,
+    возвращая стандартизированный JSON-ответ об ошибке.
+
+    :param view_func: Оборачиваемая view-функция или метод.
+    :return: Обёрнутая функция/метод с обработкой исключений.
+    """
+
+    @wraps(view_func)
+    def _wrapped_view_func(request: HttpRequest, *args, **kwargs):
+        try:
+            return view_func(request, *args, **kwargs)
+        except UserFile.DoesNotExist:
+            return JsonResponse(
+                {'message': 'Родительская папка не найдена'},
+                status=404,
+            )
+        except (ValueError, TypeError):
+            return JsonResponse(
+                {'message': 'Передан некорректный идентификатор или тип данных.'},
+                status=400
+            )
+        except Exception as e:
+            logger.critical(f"Unexpected error: {e}", exc_info=True)
+            return JsonResponse(
+                {'message': 'Неизвестная ошибка на сервере, попробуйте позже'},
+                status=500
+            )
+
+    return _wrapped_view_func
 
 
 class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
-    model = UserFile
-    template_name = FILE_LIST_TEMPLATE
-    context_object_name = 'items'
-    paginate_by = 20
+    """
+    Отображает список файлов и папок для аутентифицированного пользователя.
 
-    def setup(self, request, *args, **kwargs):
+    Метод post создает новую папку.
+    Позволяет навигацию по директориям. Поддерживает пагинацию.
+    """
+
+    model: Type[UserFile] = UserFile
+    template_name: str = FILE_LIST_TEMPLATE
+    context_object_name: str = 'items'
+    paginate_by: int = 20
+
+    def setup(self, request: HttpRequest, *args, **kwargs) -> None:
+        """
+        Инициализирует атрибуты представления перед вызовом dispatch.
+
+        Устанавливает текущего пользователя, необработанный путь из GET-параметра 'path'
+        и объект текущей директории.
+
+        :param request: Объект HTTP-запроса.
+        :param args: Позиционные аргументы.
+        :param kwargs: Именованные аргументы.
+        """
         super().setup(request, *args, **kwargs)
-        self.user = request.user
-        self.current_path_unencoded = request.GET.get('path', '')
-        self.current_directory = DirectoryService.get_current_directory_from_path(
+        self.user: User = request.user
+        self.current_path_unencoded: str = request.GET.get('path', '')
+        self.current_directory: UserFile | None = DirectoryService.get_current_directory_from_path(
             self.user, self.current_path_unencoded
         )
 
-    def get_queryset(self):
-        self.queryset = UserFile.objects.filter(user=self.user, parent=self.current_directory)
+    def get_queryset(self) -> QuerySet[UserFile]:
+        """
+        Формирует и возвращает queryset файлов и папок для текущей директории.
+
+        Фильтрует объекты `UserFile` по текущему пользователю и
+        родительской директории (:attr:`current_directory`).
+        Если `current_directory` равен ``None``, это означает корневую
+        директорию пользователя (объекты, у которых `parent` равен ``None``).
+        Результаты упорядочиваются по типу объекта (сначала папки), затем по имени.
+
+        :return: QuerySet отфильтрованных и упорядоченных объектов.
+        """
+        queryset: QuerySet[UserFile] = UserFile.objects.filter(
+            user=self.user, parent=self.current_directory
+        )
+
         if not self.current_directory:
             self.current_directory = None
+
         logger.info(
             f"User: '{self.user}' has successfully moved to the '{self.current_directory}' directory.")
 
-        return self.queryset.order_by('object_type', 'name')
+        return queryset.order_by('object_type', 'name')
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
+    def get_context_data(self, **kwargs) -> dict[str, Any]:
+        """
+        Формирует и возвращает контекст данных для шаблона.
+
+        Добавляет в контекст информацию о текущей директории, пути,
+        "хлебные крошки", URL для кнопки "Назад", ID текущей папки
+        и форму для создания новой директории.
+
+        :param kwargs: Дополнительные аргументы контекста.
+        :return: Словарь данных контекста.
+        """
+        context: dict = super().get_context_data(**kwargs)
 
         context['current_directory'] = self.current_directory
         context['current_path_unencoded'] = self.current_path_unencoded
@@ -67,29 +151,35 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
             self.current_path_unencoded, FILE_STORAGE_LIST_FILES_URL
         )
 
-        if self.current_directory:
-            current_directory_id = self.current_directory.id
-        else:
-            current_directory_id = None
+        current_directory_id = self.current_directory.id if self.current_directory else None
 
         context['current_folder_id'] = current_directory_id
-
-        if 'form_create_folder' not in context:
-            context['form_create_folder'] = DirectoryCreationForm(user=self.user)
+        context['form_create_folder'] = DirectoryCreationForm(user=self.user)
 
         return context
 
-    def post(self, request, *args, **kwargs):
-        """Обработка создания новой папки."""
-        form = DirectoryCreationForm(request.POST, user=request.user)
+    @handle_service_exceptions
+    def post(self, request: HttpRequest, *args, **kwargs) -> JsonResponse:
+        """Обрабатывает POST-запрос для создания новой папки.
+
+        Валидирует данные формы, проверяет наличие родительской папки (если указана),
+        проверяет уникальность имени новой папки в текущем расположении и,
+        в случае успеха, вызывает сервис для создания папки.
+
+        :param request: HTTP-запрос.
+        :param args: Дополнительные позиционные аргументы.
+        :param kwargs: Дополнительные именованные аргументы.
+        :return: JSON-ответ со статусом операции.
+        """
+        form = DirectoryCreationForm(request.user, request.POST)
         if form.is_valid():
-            parent_pk = request.POST.get('parent')
-            parent_object = None
+            parent_pk: str | None = request.POST.get('parent')
+            parent_object: UserFile | None = None
 
             if parent_pk:
                 parent_object = DirectoryService.get_parent_directory(self.user, parent_pk)
 
-            directory_name = form.cleaned_data['name']
+            directory_name: str = form.cleaned_data['name']
 
             if UserFile.objects.object_with_name_exists(self.user, directory_name, parent_object):
                 logger.warning(
@@ -102,54 +192,76 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
                                f"уже существует в текущей директории."
                 }, status=400)
 
-            result = DirectoryService.create(self.user, directory_name, parent_object)
-
-            if result['success']:
+            try:
+                DirectoryService.create(self.user, directory_name, parent_object)
                 return JsonResponse({
                     'status': 'success',
                     'message': 'Папка успешно создана!',
-                    'directory': {
-                        'id': result['directory'].id,
-                        'name': result['directory'].name,
-                        'type': FileType.DIRECTORY.value,
-                        'icon_class': 'bi-folder-fill',
-                    }
-                })
-            return JsonResponse({
-                'status': 'error',
-                'message': result['message']
-            }, status=result['status'])
+                }, status=200)
+
+            except DatabaseError:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Ошибка базы данных: Не удалось создать папку из-за конфликта данных.',
+                }, status=409)
+
+            except StorageError:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Ошибка хранилища. Не удалось создать папку.'
+                }, status=500)
 
         else:
             logger.warning(
                 f"User '{self.user.username}': Form validation failed. "
-                f"Errors: {form.errors['name'].data}"
+                f"errors: {form.errors['name'].data}"
             )
             return JsonResponse(
-                {'status': 'error', 'message': f'{form.errors["name"][0]}',
+                {'status': 'error',
+                 'message': f'{form.errors["name"][0]}',
                  'errors': form.errors.as_json()},
                 status=400
             )
 
 
 class FileUploadAjaxView(LoginRequiredMixin, View):
-    def post(self, request, *args, **kwargs):
-        relative_paths = request.POST.getlist('relative_paths')
-        parent_id = request.POST.get('parent_id')
-        files = request.FILES.getlist('files')
-        user = request.user
+    """View для обработки AJAX-запросов на загрузку файлов и папок."""
 
-        parent_object, error_response = DirectoryService.get_parent_directory(user, parent_id)
-        if error_response:
-            return error_response
+    @staticmethod
+    def _handle_form_validation_error(form: FileUploadForm) -> str:
+        """
+        Формирует строку ошибок из невалидной формы.
 
-        num_files = len(files)
+        :param form: Экземпляр невалидной формы ``FileUploadForm``.
+        :return: Строка, содержащая все сообщения об ошибках.
+        """
+        error_messages: list[str] = []
+        for field, errors in form.errors.items():
+            error_messages.append(f"{field}: {'; '.join(errors)}")
+        error_string: str = "; ".join(error_messages)
+        return error_string
 
-        if relative_paths and num_files != len(relative_paths):
-            logger.error(
-                f"User: '{user}'. Количество файлов и путей не совпадает.")
-            return JsonResponse({'error': 'Данные о путях файлов некорректны.'}, status=400)
-        else:
+    @handle_service_exceptions
+    def post(self, request: HttpRequest, *args, **kwargs) -> JsonResponse:
+        """
+        Обрабатывает POST-запрос на загрузку файлов.
+
+        Принимает список файлов и опционально относительные пути для каждого файла
+        для создания вложенных директорий.
+
+        :param request: Объект HttpRequest.
+        :return: JsonResponse с результатами загрузки.
+        """
+        relative_paths: list[str | None] = request.POST.getlist('relative_paths')
+        parent_id: str | None = request.POST.get('parent_id')
+        files: list[UploadedFile] = request.FILES.getlist('files')
+        user: User = request.user
+
+        parent_object: UserFile | None = DirectoryService.get_parent_directory(user, parent_id)
+
+        num_files: int = len(files)
+
+        if not relative_paths:
             relative_paths = [None for i in range(num_files)]
 
         logger.info(
@@ -161,37 +273,52 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
             logger.warning(f"User: '{user.username}': File upload request received without files.")
             return JsonResponse({'error': 'Файл отсутствует'}, status=400)
 
-        results = []
-        cache = {}
+        results: list[dict[str, str]] = []
+        cache: dict[str, UserFile] = {}
         for uploaded_file, rel_path in zip(files, relative_paths):
-            form_data = {'parent': parent_object.pk if parent_object else None}
-            form_files = {'file': uploaded_file}
+            form_data: dict[str, Any] = {'parent': parent_object.pk if parent_object else None}
+            form_files: dict[str, UploadedFile] = {'file': uploaded_file}
             form = FileUploadForm(form_data, form_files, user=user)
 
             if form.is_valid():
                 try:
                     with transaction.atomic():
-                        result, dir_path_cache, parent_object_cache = upload_service.handle_file_upload(
+                        dir_path_cache, parent_object_cache = upload_service.handle_file_upload(
                             uploaded_file, user, parent_object, rel_path, cache
                         )
-                    if (result and 'error' not in result and
-                            dir_path_cache and dir_path_cache not in cache):
-                        cache[dir_path_cache] = parent_object_cache
+                        result: dict[str, str] = {'name': uploaded_file.name, 'status': 'success'}
+                        results.append(result)
 
-                except Exception:
-                    result = {
+                        if dir_path_cache and dir_path_cache not in cache:
+                            cache[dir_path_cache] = parent_object_cache
+
+                except InvalidPathError as e:
+                    logger.error(
+                        f"User: '{user.username}'. Invalid relative path: {rel_path}. {e}",
+                        exc_info=True
+                    )
+                    results.append({
                         'name': uploaded_file.name,
                         'status': 'error',
-                        'error': 'Ошибка загрузки файла или папки'
-                    }
+                        'error': f'Некорректный относительный путь {rel_path}'
+                    })
 
-                results.append(result)
+                except StorageError:
+                    results.append({
+                        'name': uploaded_file.name,
+                        'status': 'error',
+                        'error': 'Ошибка Хранилища',
+                    })
+
+                except NameConflictError:
+                    results.append({
+                        'name': uploaded_file.name,
+                        'status': 'error',
+                        'error': 'Такой файл уже существует'
+                    })
 
             else:
-                error_messages = []
-                for field, errors in form.errors.items():
-                    error_messages.append(f"{field}: {'; '.join(errors)}")
-                error_string = "; ".join(error_messages)
+                error_string: str = FileUploadAjaxView._handle_form_validation_error(form)
                 logger.warning(
                     f"User '{user.username}': File '{uploaded_file.name}' failed validation. "
                     f"Errors: {error_string}"
@@ -208,15 +335,37 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
 
 
 class FileSearchView(QueryParamMixin, LoginRequiredMixin, ListView):
-    template_name = 'file_storage/search_results.html'
-    paginate_by = 25
-    context_object_name = 'search_results'
+    """
+    Отображает результаты поиска файлов и папок пользователя.
 
-    def setup(self, request, *args, **kwargs):
+    Поиск выполняется по имени файла/папки (без учета регистра).
+    Используется Пагинация.
+    """
+
+    template_name: str = 'file_storage/search_results.html'
+    paginate_by: int = 25
+    context_object_name: str = 'search_results'
+
+    query: str | None = None
+
+    def setup(self, request: HttpRequest, *args, **kwargs) -> None:
+        """
+        Инициализирует атрибут `query` из GET-параметра 'query'.
+        """
         super().setup(request, *args, **kwargs)
         self.query = self.request.GET.get('query', None)
 
-    def get_queryset(self) -> HttpResponse:
+    def get_queryset(self) -> QuerySet[UserFile]:
+        """
+        Формирует queryset для поиска файлов и папок.
+
+        Если поисковый запрос `self.query` не задан, возвращает пустой queryset.
+        В противном случае, фильтрует объекты :model:`UserFile`
+        по текущему пользователю и совпадению имени с `self.query` (без учета регистра).
+        Результаты упорядочиваются по типу объекта (папки сначала), затем по имени.
+
+        :return: Queryset с результатами поиска.
+        """
         if not self.query:
             return UserFile.objects.none()
 
@@ -224,11 +373,21 @@ class FileSearchView(QueryParamMixin, LoginRequiredMixin, ListView):
             user=self.request.user, name__icontains=self.query
         ).order_by('object_type', 'name')
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
+    def get_context_data(self, **kwargs) -> dict[str, Any]:
+        """
+        Добавляет поисковый запрос и закодированный текущий путь в контекст.
 
-        unencoded_path = self.request.GET.get('current_path_unencoded', '')
-        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+        `unencoded_path` берется из GET-параметра 'current_path_unencoded'
+        и используется для формирования URL для возможного возврата в предыдущую директорию.
+
+        :return: Словарь с данными контекста.
+        :context query: Текущий поисковый запрос.
+        :context encoded_path: URL-закодированный путь, полученный из `current_path_unencoded`.
+        """
+        context: dict[str, Any] = super().get_context_data(**kwargs)
+
+        unencoded_path: str = self.request.GET.get('current_path_unencoded', '')
+        encoded_path: str = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
 
         context['query'] = self.query
         context['encoded_path'] = encoded_path
@@ -237,26 +396,52 @@ class FileSearchView(QueryParamMixin, LoginRequiredMixin, ListView):
 
 
 class DownloadFileView(LoginRequiredMixin, View):
-    def get(self, request, file_id):
-        unencoded_path = request.GET.get("path_param", "")
+    """
+    Обрабатывает запросы на скачивание одного файла.
+
+    При GET-запросе проверяет права пользователя на файл, его наличие в S3,
+    генерирует presigned URL для скачивания и перенаправляет пользователя по этому URL.
+    В случае ошибки или если файл не найден, показывает сообщение и перенаправляет
+    пользователя обратно на страницу, с которой был сделан запрос (или на страницу списка файлов).
+    """
+
+    def get(self, request: HttpRequest, file_id: int) -> HttpResponseRedirect:
+        """
+        Обрабатывает GET-запрос на скачивание файла.
+
+        :param request: Объект HttpRequest.
+        :param file_id: ID файла (UserFile) для скачивания.
+        :return: HttpResponseRedirect на presigned URL для скачивания файла
+                 или на предыдущую страницу/список файлов в случае ошибки.
+        """
+        unencoded_path: str = request.GET.get("path_param", "")
         encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
 
-        user_file = get_object_or_404(
-            UserFile, id=file_id, user=request.user, object_type=FileType.FILE
-        )
+        try:
+            user_file = get_object_or_404(
+                UserFile, id=file_id, user=request.user, object_type=FileType.FILE
+            )
+        except Http404:
+            logger.warning(
+                f"Попытка доступа к несуществующему или чужому файлу: id={file_id}, "
+                f"user={request.user.id}"
+            )
+            messages.warning(request, "Запрошенный файл не найден или "
+                                      "у вас нет прав на его скачивание.")
+            return redirect(encoded_path)
 
-        s3_key = user_file.file.name
+        s3_key: str = user_file.file.name
 
         try:
             if minio_client.check_files_exist((user_file,)):
-                presigned_url = minio_client.s3_client.generate_presigned_url(
+                presigned_url: str = minio_client.s3_client.generate_presigned_url(
                     'get_object',
                     Params={
                         'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
                         'Key': s3_key,
                         'ResponseContentDisposition': f'attachment; filename="{user_file.name}"'
                     },
-                    ExpiresIn=1800
+                    ExpiresIn=1700
                 )
                 logger.info(
                     f"File downloaded successfully. s3_key: {s3_key}, presigned_url: {presigned_url}")
@@ -285,14 +470,41 @@ class DownloadFileView(LoginRequiredMixin, View):
 
 
 class DownloadDirectoryView(LoginRequiredMixin, View):
-    def get(self, request, directory_id):
-        unencoded_path = request.GET.get("path_param", "")
+    """
+    Обрабатывает запросы на скачивание директории пользователя в виде ZIP-архива.
+    """
+
+    def get(self, request: HttpRequest, directory_id: int) -> StreamingHttpResponse | Any:
+        """
+        Обрабатывает GET-запрос для скачивания директории.
+
+        При успешном выполнении инициирует потоковую передачу ZIP-архива,
+        содержащего все файлы и подпапки указанной директории.
+        В случае ошибок (например, папка не найдена, нет прав доступа,
+        проблемы с чтением файлов из хранилища) перенаправляет пользователя
+        на предыдущую страницу с соответствующим сообщением.
+
+        :param request: HTTP-запрос.
+        :param directory_id: Идентификатор директории (объекта UserFile) для скачивания.
+        :returns: StreamingHttpResponse с ZIP-архивом или HttpResponseRedirect в случае ошибки.
+        """
+        unencoded_path: str = request.GET.get("path_param", "")
         encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
 
-        user = request.user
-        directory = get_object_or_404(
-            UserFile, id=directory_id, user=user, object_type=FileType.DIRECTORY
-        )
+        user: User = request.user
+
+        try:
+            directory: UserFile = get_object_or_404(
+                UserFile, id=directory_id, user=user, object_type=FileType.DIRECTORY
+            )
+        except Http404:
+            logger.warning(
+                f"Попытка доступа к несуществующей или чужой папке: id={directory_id}, "
+                f"user={request.user}"
+            )
+            messages.warning(request, "Запрошенная папка не найдена или "
+                                      "у вас нет прав на её скачивание.")
+            return redirect(encoded_path)
 
         all_files = UserFile.objects.get_all_children_files(directory)
 
@@ -303,7 +515,7 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
         zip_generator = ZipStreamGenerator(directory, all_files)
 
         zip_filename = f"{directory.name}.zip"
-        encoded_zip_filename = urllib.parse.quote(zip_filename)
+        encoded_zip_filename: str = urllib.parse.quote(zip_filename)
 
         try:
             response = StreamingHttpResponse(
@@ -328,26 +540,46 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
 
 
 class DeleteView(LoginRequiredMixin, View):
-    def post(self, request, *args, **kwargs):
-        user = request.user
+    """
+    Обрабатывает удаление файлов и папок пользователя.
+    """
 
-        unencoded_path = request.POST.get("unencoded_path", "")
-        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+    def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponseRedirect:
+        """
+        Обрабатывает POST-запрос на удаление объекта.
 
-        item_id = request.POST.get('item_id')
+        Получает ID объекта и путь для редиректа из тела запроса.
+        Проверяет, что объект принадлежит текущему пользователю,
+        прежде чем инициировать удаление через DirectoryService.
+
+        :param request: Объект HTTP-запроса.
+        :param args: Дополнительные позиционные аргументы.
+        :param kwargs: Дополнительные именованные аргументы.
+        :return: Редирект на страницу, с которой был сделан запрос.
+        """
+        user: User = request.user
+
+        unencoded_path: str = request.POST.get("unencoded_path", "")
+        encoded_path: str = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+
+        item_id: str | None = request.POST.get('item_id')
 
         try:
-            storage_object = get_object_or_404(UserFile, user=user, id=item_id)
+            storage_object: UserFile = get_object_or_404(UserFile, user=user, id=item_id)
+        except Http404:
+            logger.warning(
+                f"Попытка доступа к несуществующей или чужой папке при удалении: id={item_id}, "
+                f"user={request.user}"
+            )
+            messages.warning(request, "Запрошенный файл не найден.")
+            return redirect(encoded_path)
+
+        try:
             DirectoryService.delete_obj(storage_object)
             messages.success(
                 request, f"{storage_object.get_object_type_display()} успешно удален(а)!"
             )
-        except ValidationError:
-            logger.warning(
-                f"User '{user}'. Invalid type received. UUID required. {type(item_id)} received.",
-                exc_info=True
-            )
-            messages.warning(request, "Удалить объект не удалось. Неправильный ID объекта")
+
         except StorageError as e:
             logger.error(f"User '{user}'. Error while deleting '{storage_object}' from s3. {e}",
                          exc_info=True)
@@ -357,13 +589,28 @@ class DeleteView(LoginRequiredMixin, View):
 
 
 class RenameView(LoginRequiredMixin, View):
-    def post(self, request, *args, **kwargs):
-        unencoded_path = request.POST.get("unencoded_path", "")
-        item_id = request.POST.get('id')
-        user = request.user
-        new_name = request.POST.get('name')
+    """
+    Обрабатывает POST-запрос для переименования файла или папки пользователя.
+    """
+    def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponseRedirect:
+        """
+        Обрабатывает переименование объекта.
 
-        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+        Получает из POST-запроса ID объекта, новое имя и текущий путь для редиректа.
+        Валидирует данные, выполняет операцию переименования через слой сервисов
+        и обрабатывает возможные ошибки, информируя пользователя через `django.contrib.messages`.
+
+        :param request: Объект HttpRequest.
+        :param args: Позиционные аргументы.
+        :param kwargs: Именованные аргументы.
+        :return: Объект HttpResponseRedirect (редирект).
+        """
+        unencoded_path: str = request.POST.get("unencoded_path", "")
+        item_id: str = request.POST.get('id', '')
+        user: User = request.user
+        new_name: str = request.POST.get('name', '')
+
+        encoded_path: str = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
 
         if not item_id:
             logger.warning(f"User '{user}'. Object ID was not transmitted")
@@ -430,7 +677,19 @@ class RenameView(LoginRequiredMixin, View):
 
 
 class MoveStorageItemView(LoginRequiredMixin, View):
-    def post(self, request):
+    def post(self, request: HttpRequest) -> HttpResponseRedirect:
+        """
+        Обрабатывает POST-запрос на перемещение файла или папки.
+
+        Получает из запроса ID перемещаемого объекта, путь для редиректа
+        и ID папки назначения. Вызывает сервис для выполнения логики
+        перемещения и обрабатывает возможные исключения.
+
+        :param request: Объект HTTP-запроса.
+        :return: Перенаправление на исходный URL.
+        :raises: Неявно обрабатывает и логирует исключения,
+                 возвращая пользователю сообщение об ошибке.
+        """
         item_id = request.POST.get('item_id_to_move')
         unencoded_path = request.POST.get('unencoded_path')
         destination_folder_id = request.POST.get('destination_folder_id')

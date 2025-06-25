@@ -1,4 +1,8 @@
-class NameConflictError(Exception):
+class DatabaseError(Exception):
+    pass
+
+
+class NameConflictError(DatabaseError):
     """
     Исключение, возникающее при конфликте имен файлов или папок.
     """
@@ -25,3 +29,6 @@ class NameConflictError(Exception):
 class StorageError(Exception):
     pass
 
+
+class InvalidPathError(Exception):
+    pass

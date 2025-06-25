@@ -1,72 +1,90 @@
 import logging
+from typing import Any
 
-from file_storage.exceptions import StorageError
+from django.contrib.auth.models import User
+from django.core.files.uploadedfile import UploadedFile
+from django.db import transaction
+
+from file_storage.exceptions import StorageError, InvalidPathError
+from file_storage.models import UserFile
 from file_storage.services.directory_service import DirectoryService
 from file_storage.services.file_service import FileService
 
 logger = logging.getLogger(__name__)
 
 
-def handle_file_upload(uploaded_file, user, parent_object, relative_path, cache):
+def handle_file_upload(
+        uploaded_file: UploadedFile,
+        user: User,
+        parent_object: UserFile | None,
+        relative_path: str | None,
+        cache: dict[str, UserFile]
+) -> tuple[str | None, UserFile | None]:
     """
-    Обрабатывает один загруженный файл: проверяет, создает UserFile, загружает файл в Minio через FileField.
-    Возвращает словарь с результатом.
+    Обрабатывает загрузку одного файла.
+
+    Создает необходимые директории на основе ``relative_path`` (если указан),
+    создает запись ``UserFile`` в базе данных и загружает файл в S3/Minio.
+    Использует кэш ``cache`` для оптимизации создания директорий.
+
+    :param uploaded_file: Загружаемый файл.
+    :param user: Пользователь, загружающий файл.
+    :param parent_object: Изначальная родительская директория (UserFile) или None.
+    :param relative_path: Относительный путь для файла (например, "subfolder/file.txt").
+                          Если None, файл загружается в ``parent_object``.
+    :param cache: Кэш для уже обработанных путей директорий.
+    :raises InvalidPathError: Если ``relative_path`` некорректен.
+    :raises StorageError: Если произошла ошибка при взаимодействии с S3/Minio.
+    :return: Кортеж (dir_path, parent_object).
+             ``dir_path``: Относительный путь к созданной/найденной директории (ключ для кэша),
+                           или None, если файл загружается напрямую в ``parent_object``.
+             ``parent_object``: Родительский объект UserFile для создаваемого файла,
+                                   может быть None, если это корень.
     """
-    uploaded_file_name = uploaded_file.name
-    dir_path = None
-    log_prefix = (f"User '{user.username}' (ID: {user.id}), File '{uploaded_file_name}', "
-                  f"Parent ID: {parent_object.id if parent_object else 'None'}, relative_path: {relative_path}")
+    uploaded_file_name: str = uploaded_file.name
+    dir_path: str | None = None
+    log_prefix: str = (f"User '{user.username}' (ID: {user.id}), File '{uploaded_file_name}', "
+                       f"Parent ID: {parent_object.id if parent_object else 'None'}, relative_path: {relative_path}")
 
-    if relative_path:
-        path_components = [component for component in relative_path.split('/') if component]
-        dir_path = '/'.join(path_components[:-1])
+    with transaction.atomic():
+        if relative_path:
+            path_components: list[str] = [component for component in relative_path.split('/') if
+                                          component]
+            dir_path = '/'.join(path_components[:-1])
 
-        if not path_components:
-            logger.warning(f"Invalid relative path {log_prefix}")
-            return {
-                'name': uploaded_file_name,
-                'status': 'error',
-                'error': f'Некорректный относительный путь {relative_path}'
-            }
+            if not path_components:
+                logger.error(f"Invalid relative path {log_prefix}")
+                raise InvalidPathError()
 
-        directory_path_parts = path_components[:-1]
+            directory_path_parts: list[str] = path_components[:-1]
 
-        if dir_path not in cache:
-            try:
-                parent_object = DirectoryService.get_parent_or_create_directories_from_path(
-                    user, parent_object, directory_path_parts
-                )
+            if dir_path not in cache:
+                try:
+                    parent_object = DirectoryService.get_parent_or_create_directories_from_path(
+                        user, parent_object, directory_path_parts
+                    )
 
-            except StorageError:
-                # Логирвание ниже в create_directories_from_path
-                return {
-                    'name': uploaded_file_name,
-                    'status': 'error',
-                    'error': f'Ошибка при создании структуры папок',
-                    'relative_path': relative_path
-                }
+                except StorageError:
+                    # Логирвание ниже в get_parent_or_create_directories_from_path
+                    raise
 
-            except Exception as e:
-                logger.error(
-                    f"Failed to create directory structure for '{relative_path}'. User: {user.username}. Error: {e}",
-                    exc_info=True
-                )
-                return {
-                    'name': uploaded_file_name,
-                    'status': 'error',
-                    'error': f'Ошибка при создании структуры папок',
-                    'relative_path': relative_path
-                }
-        else:
-            parent_object = cache[dir_path]
+            else:
+                parent_object = cache[dir_path]
 
-    return FileService.create_file(
-        user, uploaded_file, parent_object, log_prefix
-    ), dir_path, parent_object
+        FileService.create_file(user, uploaded_file, parent_object, log_prefix)
+        return dir_path, parent_object
 
 
-def get_message_and_status(results):
-    any_errors = any(res['status'] == 'error' for res in results)
+def get_message_and_status(results: list[dict[str, str]]) -> tuple[dict[str, str], int]:
+    """
+    Формирует общее сообщение и HTTP-статус на основе результатов обработки файлов.
+
+    :param results: Список словарей, где каждый словарь представляет результат
+                    обработки одного файла и содержит ключи 'status' и 'name'.
+    :return: Кортеж из словаря с сообщением и списком результатов, и HTTP-статуса.
+             HTTP-статус 200 если все успешно, 207 (Multi-Status) если были ошибки.
+    """
+    any_errors: bool = any(res['status'] == 'error' for res in results)
 
     if any_errors:
         if all(res['status'] == 'error' for res in results):

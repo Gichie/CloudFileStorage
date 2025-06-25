@@ -1,10 +1,13 @@
+import datetime
 import urllib
 import uuid
+from typing import Optional, TYPE_CHECKING
 
-from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.db import models
 
-User = get_user_model()
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
 
 def user_directory_path(instance, filename):
@@ -12,14 +15,27 @@ def user_directory_path(instance, filename):
 
 
 class FileType(models.TextChoices):
-    FILE = 'file', 'Файл'
-    DIRECTORY = 'directory', 'Папка'
+    """Перечисление типов объектов в файловом хранилище."""
+    FILE: str = 'file', 'Файл'
+    DIRECTORY: str = 'directory', 'Папка'
 
 
 class UserFileManager(models.Manager):
-    def get_all_children_files(self, directory):
+    """
+    Менеджер для модели UserFile, предоставляющий кастомные методы для работы с файлами и папками.
+    """
+
+    def get_all_children_files(self, directory: 'UserFile'):
         """
-        Получает все объекты (файлы и подпапки) внутри указанной директории.
+        Получает все дочерние объекты (файлы и папки) внутри указанной директории.
+
+        Выполняет рекурсивный поиск по пути. Если переданный объект не является
+        директорией, возвращает пустой QuerySet.
+
+        :param directory: Объект UserFile, представляющий директорию, для которой
+                          необходимо получить дочерние элементы.
+        :returns: QuerySet, содержащий все дочерние UserFile объекты,
+                  отсортированные по пути и имени, или пустой QuerySet.
         """
         if directory.object_type == FileType.DIRECTORY:
             all_files = (self.filter(
@@ -32,7 +48,7 @@ class UserFileManager(models.Manager):
 
         return all_files
 
-    def available_directories_to_move(self, user, item_id):
+    def available_directories_to_move(self, user: 'User', item_id):
         item = self.get(user=user, id=item_id)
         res = self.filter(user=user, object_type=FileType.DIRECTORY).exclude(id=item.parent_id)
 
@@ -41,18 +57,33 @@ class UserFileManager(models.Manager):
 
         return res
 
-    def object_with_name_exists(self, user, directory_name, parent_object):
-        """
-        Проверяет существование объекта с указанным именем в родительской директории
+    def object_with_name_exists(self, user: 'User', object_name: str,
+                                parent_object: Optional['UserFile'] = None) -> bool:
+        """Проверяет существование объекта (файла или папки) с указанным именем
+        в заданной родительской директории для конкретного пользователя.
+
+        :param user: Пользователь, владелец объекта.
+        :param object_name: Имя проверяемого объекта.
+        :param parent_object: Родительская директория. Если ``None``, проверяется
+                              существование в корневой директории пользователя.
+        :return: ``True``, если объект с таким именем уже существует, иначе ``False``.
         """
         return self.filter(
             user=user,
-            name=directory_name,
+            name=object_name,
             parent=parent_object,
         ).exists()
 
-    def file_exists(self, user, parent, name):
-        """Проверяет существование файла с указанным именем в родительской директории"""
+    def file_exists(self, user: 'User', parent: Optional['UserFile'], name: str) -> bool:
+        """
+        Проверяет существование файла или папки с указанным именем в родительской директории
+        для конкретного пользователя.
+
+        :param user: Пользователь, владелец объекта.
+        :param parent: Родительская папка. None для корневой директории.
+        :param name: Имя файла или папки для проверки.
+        :return: True, если объект существует, иначе False.
+        """
         return self.filter(
             user=user,
             parent=parent,
@@ -61,34 +92,47 @@ class UserFileManager(models.Manager):
 
 
 class UserFile(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='files')
+    """Модель, представляющая файл или директорию пользователя."""
+    id: uuid.UUID = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='files')
     file = models.FileField(upload_to=user_directory_path, null=True, blank=True, max_length=500)
-    path = models.CharField(unique=True, max_length=500, null=True, blank=True)
-    name = models.CharField(max_length=255)
-    parent = models.ForeignKey(
+    path: str = models.CharField(unique=True, max_length=500, null=True, blank=True)
+    name: str = models.CharField(max_length=255)
+    parent: Optional['UserFile'] = models.ForeignKey(
         'self', null=True, blank=True, on_delete=models.CASCADE, related_name='children', db_index=True
     )
-    object_type = models.CharField(max_length=10, choices=FileType.choices, default=FileType.FILE)
-    file_size = models.PositiveBigIntegerField(null=True, blank=True)
-    content_type = models.CharField(max_length=100, null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    last_modified = models.DateTimeField(auto_now=True)
+    object_type: str = models.CharField(max_length=10, choices=FileType.choices, default=FileType.FILE)
+    file_size: int | None = models.PositiveBigIntegerField(null=True, blank=True)
+    content_type: str | None = models.CharField(max_length=100, null=True, blank=True)
+    created_at: datetime = models.DateTimeField(auto_now_add=True)
+    last_modified: datetime = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ('user', 'name', 'parent')
 
-    objects = UserFileManager()
+    objects: UserFileManager = UserFileManager()
 
     def __str__(self):
         if self.parent:
             return f"{self.name}"
         return str(self.name or "Без названия")
 
-    def is_directory(self):
+    def is_directory(self) -> bool:
+        """Проверяет, является ли данный объект директорией.
+
+        :return: ``True``, если объект является директорией, иначе ``False``.
+        """
         return self.object_type == FileType.DIRECTORY
 
-    def get_full_path(self):
+    def get_full_path(self) -> str:
+        """Формирует и возвращает полный логический путь к объекту.
+
+        Путь строится рекурсивно на основе родительских директорий.
+        Для корневых объектов путь начинается с "user_{user_id}/".
+        Для директорий путь заканчивается слешем. Файлы не имеют слеша на конце.
+
+        :return: Строка, представляющая полный логический путь к объекту.
+        """
         if self.parent:
             parent_path = self.parent.get_full_path()
             return f"{parent_path}{self.name}{'/' if self.is_directory() else ''}"
@@ -100,7 +144,16 @@ class UserFile(models.Model):
         path = '/'.join(self.path.split('/')[1:])
         return path
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, **kwargs) -> None:
+        """Переопределенный метод сохранения модели.
+
+        Устанавливает полный путь (`path`) объекта перед сохранением.
+        Если объект является файлом и имеет связанный файл (`self.file`),
+        обновляет `file_size` и `content_type`.
+
+        :param args: Позиционные аргументы для родительского метода `save`.
+        :param kwargs: Именованные аргументы для родительского метода `save`.
+        """
         self.path = self.get_full_path()
 
         if self.file and not self.is_directory():
@@ -112,8 +165,16 @@ class UserFile(models.Model):
 
         super().save(*args, **kwargs)
 
-    def get_s3_key_for_directory_marker(self):
-        # Возвращает ключ для объекта-маркера папки в S3 (если используется)
+    def get_s3_key_for_directory_marker(self) -> str | None:
+        """Возвращает ключ S3 для объекта-маркера, если текущий объект - директория.
+
+        Маркер используется для представления пустых директорий в S3-совместимых хранилищах.
+        Имя маркера формируется добавлением суффикса ".empty_folder_marker" к полному пути директории.
+        Полный путь директории должен уже заканчиваться на '/'.
+
+        :return: Строку с ключом S3 для маркера директории, или ``None``,
+        если объект не является директорией.
+        """
         if self.is_directory():
             # Используем get_full_path() для логического пути папки
             return f"{self.get_full_path()}.empty_folder_marker"

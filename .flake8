@@ -13,4 +13,4 @@ exclude =
 docstring-convention = pep257
 # Для flake8-bugbear
 # B950: line too long (soft check, use max-line-length for hard check)
-# extend-ignore = B950
+extend-ignore = D100

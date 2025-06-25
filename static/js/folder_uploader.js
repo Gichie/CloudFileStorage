@@ -207,20 +207,34 @@ document.addEventListener('DOMContentLoaded', function () {
         // --- Основной блок Try/Catch для обработки загрузки ---
         try {
             const response = await uploadWithXHR(uploadUrl, formData);
+            console.log("Response status:", response.status, "Response ok:", response.ok);
 
             if (!response.ok) {
-                const errorData = response.json();
+                let errorData;
+                try {
+                    errorData = await response.json(); // <--- Используй await здесь
+                } catch (e) {
+                    errorData = {detail: await response.text()}; // Если не JSON, взять как текст
+                }
                 const serverErrorMsg = errorData?.error || errorData?.detail || `HTTP ошибка ${response.status}`;
                 showFinalStatusMessage(`Ошибка сервера: ${serverErrorMsg}`, true);
                 return;
             }
 
-            const responseData = response.json();
+            let responseData;
+            try {
+                responseData = await response.json(); // <--- Используй await здесь
+            } catch (e) {
+                showFinalStatusMessage('Ошибка парсинга ответа от сервера.', true);
+                return;
+            }
+
             let successfulUploads = 0;
             let failedUploads = 0;
 
             if (Array.isArray(responseData.results)) {
                 responseData.results.forEach(fileResult => {
+
                     if (fileResult.status === 'success') {
                         successfulUploads++;
                     } else {
@@ -230,25 +244,43 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
             } else {
                 showFinalStatusMessage('Ответ сервера не содержит корректных результатов по файлам.', true);
+
+                console.error("responseData.results is not an array:", responseData.results);
+
                 return;
             }
 
             updateFolderUploadProgress(totalFiles, totalFiles, successfulUploads, "Завершено.");
 
+            console.log("Uploads - Success:", successfulUploads, "Failed:", failedUploads);
+
             if (failedUploads === 0) {
                 showFinalStatusMessage('Все файлы из папки успешно загружены!');
+
+                console.log("All files uploaded successfully. Preparing for redirect/reload.");
+                console.log("window.CURRENT_LIST_URL:", window.CURRENT_LIST_URL);
+
                 setTimeout(() => {
-                    if (window.CURRENT_LIST_URL) window.location.href = window.CURRENT_LIST_URL;
-                    else window.location.reload();
-                }, 1500);
+                    console.log("Inside setTimeout. Attempting redirect/reload.");
+
+                    if (window.CURRENT_LIST_URL) {
+                        console.log("Redirecting to:", window.CURRENT_LIST_URL); // <--- ДОБАВЬ ЭТО
+                        window.location.href = window.CURRENT_LIST_URL;
+                    } else {
+                        console.log("Reloading current page."); // <--- ДОБАВЬ ЭТО
+                        window.location.reload();
+                    }
+                }, 1400);
             } else {
                 showFinalStatusMessage(
                     `Загрузка папки завершена. Успешно: ${successfulUploads} из ${totalFiles}. Ошибок: ${failedUploads}.`,
                     true
                 );
+                console.log("Some files failed to upload.");
             }
 
         } catch (error) {
+            console.error('Upload failed:', error);
             // Ловим наши кастомные ошибки из промиса
             if (error.isNginxLimitError || error.isNetworkError) {
                 showFinalStatusMessage(error.message, true);
