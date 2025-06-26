@@ -25,7 +25,7 @@ from file_storage.models import UserFile, FileType
 from file_storage.services import upload_service
 from file_storage.services.archive_service import ZipStreamGenerator
 from file_storage.services.directory_service import DirectoryService
-from file_storage.services.upload_service import get_message_and_status
+from file_storage.services.upload_service import get_message_and_status, upload_file
 from file_storage.storages.minio import minio_client
 from file_storage.utils import ui
 from file_storage.utils.path_utils import encode_path_for_url
@@ -248,8 +248,6 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
             logger.warning(f"User: '{user.username}': File upload request received without files.")
             return JsonResponse({'error': 'Файл отсутствует'}, status=400)
 
-        parent_object: UserFile | None = DirectoryService.get_parent_directory(user, parent_id)
-
         num_files = len(files)
 
         if not relative_paths:
@@ -260,51 +258,17 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
             f"Target parent_id: '{parent_id}'."
         )
 
+        parent_object = DirectoryService.get_parent_directory(user, parent_id)
+
         results: list[dict[str, str]] = []
         cache: dict[str, UserFile] = {}
+
         for uploaded_file, rel_path in zip(files, relative_paths):
             form_data: dict[str, Any] = {'parent': parent_object.pk if parent_object else None}
             form_files: dict[str, UploadedFile] = {'file': uploaded_file}
             form = FileUploadForm(form_data, form_files, user=user)
 
-            if form.is_valid():
-                try:
-                    with transaction.atomic():
-                        dir_path_cache, parent_object_cache = upload_service.handle_file_upload(
-                            uploaded_file, user, parent_object, rel_path, cache
-                        )
-                        result: dict[str, str] = {'name': uploaded_file.name, 'status': 'success'}
-                        results.append(result)
-
-                        if dir_path_cache and dir_path_cache not in cache:
-                            cache[dir_path_cache] = parent_object_cache
-
-                except InvalidPathError as e:
-                    logger.error(
-                        f"User: '{user.username}'. Invalid relative path: {rel_path}. {e}",
-                        exc_info=True
-                    )
-                    results.append({
-                        'name': uploaded_file.name,
-                        'status': 'error',
-                        'error': f'Некорректный относительный путь {rel_path}'
-                    })
-
-                except StorageError:
-                    results.append({
-                        'name': uploaded_file.name,
-                        'status': 'error',
-                        'error': 'Ошибка Хранилища',
-                    })
-
-                except NameConflictError:
-                    results.append({
-                        'name': uploaded_file.name,
-                        'status': 'error',
-                        'error': 'Такой файл уже существует'
-                    })
-
-            else:
+            if not form.is_valid():
                 error_string: str = FileUploadAjaxView._handle_form_validation_error(form)
                 logger.warning(
                     f"User '{user.username}': File '{uploaded_file.name}' failed validation. "
@@ -314,6 +278,35 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                     'name': uploaded_file.name,
                     'status': 'error',
                     'error': error_string or 'Ошибка валидации файла.'
+                })
+
+            try:
+                upload_file(user, uploaded_file, parent_object, rel_path, cache)
+                results.append({'name': uploaded_file.name, 'status': 'success'})
+
+            except InvalidPathError as e:
+                logger.error(
+                    f"User: '{user.username}'. Invalid relative path: {rel_path}. {e}",
+                    exc_info=True
+                )
+                results.append({
+                    'name': uploaded_file.name,
+                    'status': 'error',
+                    'error': f'Некорректный относительный путь {rel_path}'
+                })
+
+            except StorageError:
+                results.append({
+                    'name': uploaded_file.name,
+                    'status': 'error',
+                    'error': 'Ошибка Хранилища',
+                })
+
+            except NameConflictError:
+                results.append({
+                    'name': uploaded_file.name,
+                    'status': 'error',
+                    'error': 'Такой файл уже существует'
                 })
 
         response_data, status_code = get_message_and_status(results)

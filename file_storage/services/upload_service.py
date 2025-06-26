@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import UploadedFile
@@ -11,6 +10,38 @@ from file_storage.services.directory_service import DirectoryService
 from file_storage.services.file_service import FileService
 
 logger = logging.getLogger(__name__)
+
+
+def upload_file(
+        user: User,
+        uploaded_file: UploadedFile,
+        parent_object: UserFile | None,
+        rel_path: str | None,
+        cache: dict[str, UserFile]
+) -> None:
+    """Атомарно обрабатывает загрузку одного файла.
+
+    Функция использует внешний кэш для отслеживания уже
+    созданных директорий в рамках одной транзакции,
+    чтобы избежать повторных обращений к базе данных.
+
+    :param user: Пользователь, который загружает файл.
+    :param uploaded_file: Объект загруженного файла.
+    :param parent_object: Родительский объект для загрузки.
+    :param rel_path: Относительный путь, по которому нужно создать вложенные папки.
+    :param cache: Кэш уже созданных директорий для текущей сессии загрузки.
+                  Функция модифицирует этот объект.
+
+    :raises: Может пробрасывать исключения из `handle_file_upload` (например,
+             `NameConflictError`, `StorageError`), что приведет к откату транзакции.
+    """
+    with transaction.atomic():
+        dir_path_cache, parent_object_cache = handle_file_upload(
+            uploaded_file, user, parent_object, rel_path, cache
+        )
+
+        if dir_path_cache and dir_path_cache not in cache:
+            cache[dir_path_cache] = parent_object_cache
 
 
 def handle_file_upload(

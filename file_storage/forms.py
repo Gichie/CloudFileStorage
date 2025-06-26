@@ -4,6 +4,7 @@ from typing import Any
 
 from django import forms
 from django.contrib.auth.models import User
+from django.core.files.uploadedfile import UploadedFile
 
 from cloud_file_storage.settings import DATA_UPLOAD_MAX_MEMORY_SIZE
 from file_storage.models import UserFile, FileType
@@ -12,13 +13,23 @@ INVALID_CHARS_PATTERN = re.compile(r'[\/\\<>:"|?*]')
 
 
 class FileUploadForm(forms.ModelForm):
+    """Форма для валидации и обработки загрузки одного файла.
+
+    Динамически настраивает поле 'parent' для выбора только директорий,
+    принадлежащих текущему пользователю. Автоматически устанавливает имя
+    файла из метаданных загруженного файла.
+    """
     class Meta:
         model = UserFile
         fields = ['name', 'file', 'parent']
         widgets = {'parent': forms.Select(attrs={'class': 'form-control'}), }
 
     def __init__(self, *args, **kwargs):
-        user = kwargs.pop('user', None)
+        """Инициализирует форму, извлекая пользователя для фильтрации полей.
+
+        :param user: Опциональный объект пользователя для фильтрации queryset поля 'parent'.
+        """
+        user: User | None = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
 
         self.fields['name'].widget = forms.HiddenInput()
@@ -26,14 +37,22 @@ class FileUploadForm(forms.ModelForm):
         self.fields['file'].allow_empty_file = True
         if user:
             self.fields['parent'].queryset = UserFile.objects.filter(
-                user=user,
-                object_type='directory'
+                user=user, object_type='directory'
             )
             self.fields['parent'].required = False
             self.fields['parent'].empty_label = "Корневая директория"
 
     def clean_file(self):
-        file = self.cleaned_data.get('file')
+        """Валидирует загруженный файл.
+
+        Проверяет наличие файла, его размер и устанавливает имя файла
+        в cleaned_data, если оно не было предоставлено.
+
+        :raises forms.ValidationError: Если файл отсутствует или превышает
+                                       максимально допустимый размер.
+        :return: Валидированный объект файла.
+        """
+        file: UploadedFile | None = self.cleaned_data.get('file')
         if file:
             if not self.cleaned_data.get('name'):
                 self.cleaned_data['name'] = os.path.basename(file.name)
