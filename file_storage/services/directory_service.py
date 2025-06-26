@@ -21,24 +21,39 @@ BUCKET_NAME = settings.AWS_STORAGE_BUCKET_NAME
 
 class DirectoryService:
     """Сервисный слой для операций с файлами и директориями."""
-
     @staticmethod
-    def create(user: User, directory_name: str, parent_object: UserFile | None = None) -> None:
+    def create(user: User, directory_name: str, parent_pk: str) -> None:
         """Создает новую директорию в базе данных и соответствующий маркер в S3.
 
         Операция выполняется в рамках транзакции базы данных. В случае ошибки
         на любом этапе (БД или S3), изменения откатываются (для БД), и
         выбрасываются соответствующие кастомные исключения.
 
+        :param parent_pk: ID родительской директории.
         :param user: Пользователь, создающий директорию.
         :param directory_name: Имя новой директории.
-        :param parent_object: Родительская директория. Если ``None``, директория
-                              создается в корне пользователя.
+
+        :raises NameConflictError: Если название уже существует в текущей директории.
         :raises DatabaseError: При ошибках целостности или других проблемах с БД.
         :raises StorageError: При ошибках взаимодействия с S3 (аутентификация, клиентские ошибки).
         """
+        parent_object = DirectoryService.get_parent_directory(user, parent_pk)
+
         try:
             with transaction.atomic():
+                if UserFile.objects.object_with_name_exists(user, directory_name, parent_object):
+                    logger.warning(
+                        f"User {user.username}: Directory: {directory_name} "
+                        f"already exists in parent '{parent_object.name if parent_object else 'root'}'.",
+                        exc_info=True
+                    )
+                    raise NameConflictError(
+                        f"Файл или папка с именем '{directory_name}' "
+                        f"уже существует в текущей директории.",
+                        directory_name,
+                        parent_object
+                    )
+
                 new_directory: UserFile | None = UserFile(
                     user=user,
                     name=directory_name,
@@ -346,7 +361,8 @@ class DirectoryService:
 
         if UserFile.objects.file_exists(storage_item.user, destination_folder, storage_item.name):
             raise NameConflictError(
-                "Файл или папка с таким именем уже существует",
+                f"Файл или папка с именем '{storage_item.name}' уже существует "
+                f"в папке '{destination_folder}'",
                 storage_item.name,
                 destination_folder,
             )

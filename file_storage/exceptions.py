@@ -17,14 +17,6 @@ class NameConflictError(DatabaseError):
         self.name = name
         self.parent_name = parent_name
 
-    def get_message(self):
-        """
-        Формирует сообщение для пользователя на основе деталей конфликта.
-        """
-        parent_message = f"в папке '{self.parent_name}'" if self.parent_name else "в текущей диретории"
-
-        return f"Файл или папка с таким именем уже существует {parent_message}"
-
 
 class StorageError(Exception):
     pass

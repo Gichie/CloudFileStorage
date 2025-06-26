@@ -79,11 +79,10 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
     Метод post создает новую папку.
     Позволяет навигацию по директориям. Поддерживает пагинацию.
     """
-
     model: Type[UserFile] = UserFile
     template_name: str = FILE_LIST_TEMPLATE
-    context_object_name: str = 'items'
-    paginate_by: int = 20
+    context_object_name = 'items'
+    paginate_by = 20
 
     def setup(self, request: HttpRequest, *args, **kwargs) -> None:
         """
@@ -162,9 +161,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
     def post(self, request: HttpRequest, *args, **kwargs) -> JsonResponse:
         """Обрабатывает POST-запрос для создания новой папки.
 
-        Валидирует данные формы, проверяет наличие родительской папки (если указана),
-        проверяет уникальность имени новой папки в текущем расположении и,
-        в случае успеха, вызывает сервис для создания папки.
+        Валидирует данные формы и, в случае успеха, вызывает сервис для создания папки.
 
         :param request: HTTP-запрос.
         :param args: Дополнительные позиционные аргументы.
@@ -172,46 +169,8 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
         :return: JSON-ответ со статусом операции.
         """
         form = DirectoryCreationForm(request.user, request.POST)
-        if form.is_valid():
-            parent_pk: str | None = request.POST.get('parent')
-            parent_object: UserFile | None = None
 
-            if parent_pk:
-                parent_object = DirectoryService.get_parent_directory(self.user, parent_pk)
-
-            directory_name: str = form.cleaned_data['name']
-
-            if UserFile.objects.object_with_name_exists(self.user, directory_name, parent_object):
-                logger.warning(
-                    f"User {request.user.username}: Directory: {directory_name} "
-                    f"already exists in parent '{parent_object.name if parent_object else 'root'}'."
-                )
-                return JsonResponse({
-                    'status': 'error',
-                    'message': f"Файл или папка с именем '{directory_name}' "
-                               f"уже существует в текущей директории."
-                }, status=400)
-
-            try:
-                DirectoryService.create(self.user, directory_name, parent_object)
-                return JsonResponse({
-                    'status': 'success',
-                    'message': 'Папка успешно создана!',
-                }, status=200)
-
-            except DatabaseError:
-                return JsonResponse({
-                    'status': 'error',
-                    'message': 'Ошибка базы данных: Не удалось создать папку из-за конфликта данных.',
-                }, status=409)
-
-            except StorageError:
-                return JsonResponse({
-                    'status': 'error',
-                    'message': 'Ошибка хранилища. Не удалось создать папку.'
-                }, status=500)
-
-        else:
+        if not form.is_valid():
             logger.warning(
                 f"User '{self.user.username}': Form validation failed. "
                 f"errors: {form.errors['name'].data}"
@@ -222,6 +181,34 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
                  'errors': form.errors.as_json()},
                 status=400
             )
+
+        parent_pk: str = request.POST.get('parent', '')
+        directory_name: str = form.cleaned_data['name']
+
+        try:
+            DirectoryService.create(self.user, directory_name, parent_pk)
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Папка успешно создана!',
+            }, status=201)
+
+        except NameConflictError as e:
+            return JsonResponse({
+                'status': 'error',
+                'message': f'{e}'
+            }, status=400)
+
+        except DatabaseError:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Ошибка базы данных: Не удалось создать папку из-за конфликта данных.',
+            }, status=409)
+
+        except StorageError:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Ошибка хранилища. Не удалось создать папку.'
+            }, status=500)
 
 
 class FileUploadAjaxView(LoginRequiredMixin, View):
@@ -252,14 +239,18 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
         :param request: Объект HttpRequest.
         :return: JsonResponse с результатами загрузки.
         """
-        relative_paths: list[str | None] = request.POST.getlist('relative_paths')
-        parent_id: str | None = request.POST.get('parent_id')
-        files: list[UploadedFile] = request.FILES.getlist('files')
+        relative_paths = request.POST.getlist('relative_paths')
+        parent_id: str = request.POST.get('parent_id', '')
+        files = request.FILES.getlist('files')
         user: User = request.user
+
+        if not files:
+            logger.warning(f"User: '{user.username}': File upload request received without files.")
+            return JsonResponse({'error': 'Файл отсутствует'}, status=400)
 
         parent_object: UserFile | None = DirectoryService.get_parent_directory(user, parent_id)
 
-        num_files: int = len(files)
+        num_files = len(files)
 
         if not relative_paths:
             relative_paths = [None for i in range(num_files)]
@@ -268,10 +259,6 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
             f"User: '{user.username}' ID: {user.id} initiated {num_files} files upload. "
             f"Target parent_id: '{parent_id}'."
         )
-
-        if not files:
-            logger.warning(f"User: '{user.username}': File upload request received without files.")
-            return JsonResponse({'error': 'Файл отсутствует'}, status=400)
 
         results: list[dict[str, str]] = []
         cache: dict[str, UserFile] = {}
@@ -711,8 +698,8 @@ class MoveStorageItemView(LoginRequiredMixin, View):
             messages.error(request, "Переместить объект не получилось. "
                                     "Не удалось получить ключи для удаления из хранилища")
         except NameConflictError as e:
-            logger.warning(e.get_message(), exc_info=True)
-            messages.warning(request, e.get_message())
+            logger.warning(e, exc_info=True)
+            messages.warning(request, e)
         except Exception as e:
             logger.error(
                 f"User: '{request.user}'. "
