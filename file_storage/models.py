@@ -5,6 +5,7 @@ from typing import Optional, TYPE_CHECKING
 
 from django.conf import settings
 from django.db import models
+from django.db.models import QuerySet
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -48,7 +49,19 @@ class UserFileManager(models.Manager):
 
         return all_files
 
-    def available_directories_to_move(self, user: 'User', item_id):
+    def available_directories_to_move(self, user: 'User', item_id: str) -> QuerySet['UserFile']:
+        """
+        Возвращает QuerySet с директориями, доступными для перемещения.
+
+        Логика исключений:
+        1. Нельзя переместить объект в его текущую родительскую директорию.
+        2. Если перемещается директория, нельзя переместить ее в саму себя
+           или в любую из ее дочерних директорий.
+
+        :param user: Пользователь, владелец объектов.
+        :param item_id: ID объекта (папки или файла), который нужно переместить.
+        :return: QuerySet объектов UserFile, представляющих доступные директории.
+        """
         item = self.get(user=user, id=item_id)
         res = self.filter(user=user, object_type=FileType.DIRECTORY).exclude(id=item.parent_id)
 
@@ -140,7 +153,14 @@ class UserFile(models.Model):
             return f"user_{self.user.id}/{self.name}{'/' if self.is_directory() else ''}"
 
     @property
-    def get_display_path(self):
+    def get_display_path(self) -> str:
+        """
+        Возвращает "чистый" путь к объекту для отображения пользователю.
+
+        Предполагается, что полный путь имеет вид 'user/folder/file',
+        где 'user' - это служебный префикс, который не нужно показывать.
+        Этот метод отсекает первую часть пути.
+        """
         path = '/'.join(self.path.split('/')[1:])
         return path
 

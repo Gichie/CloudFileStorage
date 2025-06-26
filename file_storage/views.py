@@ -2,10 +2,10 @@ import logging
 import urllib
 from functools import wraps
 from typing import Type, Any, Callable
+from uuid import UUID
 
 from botocore.exceptions import ClientError, ParamValidationError
 from django.contrib import messages
-from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -349,9 +349,7 @@ class FileSearchView(QueryParamMixin, LoginRequiredMixin, ListView):
     query: str | None = None
 
     def setup(self, request: HttpRequest, *args, **kwargs) -> None:
-        """
-        Инициализирует атрибут `query` из GET-параметра 'query'.
-        """
+        """Инициализирует атрибут `query` из GET-параметра 'query'."""
         super().setup(request, *args, **kwargs)
         self.query = self.request.GET.get('query', None)
 
@@ -470,9 +468,7 @@ class DownloadFileView(LoginRequiredMixin, View):
 
 
 class DownloadDirectoryView(LoginRequiredMixin, View):
-    """
-    Обрабатывает запросы на скачивание директории пользователя в виде ZIP-архива.
-    """
+    """Обрабатывает запросы на скачивание директории пользователя в виде ZIP-архива."""
 
     def get(self, request: HttpRequest, directory_id: int) -> StreamingHttpResponse | Any:
         """
@@ -540,9 +536,7 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
 
 
 class DeleteView(LoginRequiredMixin, View):
-    """
-    Обрабатывает удаление файлов и папок пользователя.
-    """
+    """Обрабатывает удаление файлов и папок пользователя."""
 
     def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponseRedirect:
         """
@@ -589,9 +583,8 @@ class DeleteView(LoginRequiredMixin, View):
 
 
 class RenameView(LoginRequiredMixin, View):
-    """
-    Обрабатывает POST-запрос для переименования файла или папки пользователя.
-    """
+    """Обрабатывает POST-запрос для переименования файла или папки пользователя."""
+
     def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponseRedirect:
         """
         Обрабатывает переименование объекта.
@@ -677,6 +670,8 @@ class RenameView(LoginRequiredMixin, View):
 
 
 class MoveStorageItemView(LoginRequiredMixin, View):
+    """Обрабатывает POST-запрос для перемещения файла или папки пользователя."""
+
     def post(self, request: HttpRequest) -> HttpResponseRedirect:
         """
         Обрабатывает POST-запрос на перемещение файла или папки.
@@ -690,27 +685,13 @@ class MoveStorageItemView(LoginRequiredMixin, View):
         :raises: Неявно обрабатывает и логирует исключения,
                  возвращая пользователю сообщение об ошибке.
         """
-        item_id = request.POST.get('item_id_to_move')
-        unencoded_path = request.POST.get('unencoded_path')
-        destination_folder_id = request.POST.get('destination_folder_id')
+        item_id: str = request.POST.get('item_id_to_move')
+        unencoded_path: str = request.POST.get('unencoded_path')
+        destination_folder_id: str = request.POST.get('destination_folder_id', '')
 
         encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
         try:
-            storage_item = UserFile.objects.get(user=request.user, id=item_id)
-            old_key = storage_item.path
-
-            if destination_folder_id:
-                destination_folder = UserFile.objects.get(
-                    user=request.user, id=destination_folder_id, object_type=FileType.DIRECTORY
-                )
-            else:
-                destination_folder = None
-
-            with transaction.atomic():
-                DirectoryService.move(storage_item, destination_folder)
-                new_key = storage_item.path
-                minio_client.move_object(old_key, new_key)
-
+            DirectoryService.move(request.user, item_id, destination_folder_id)
         except ValidationError as e:
             logger.warning(
                 f"User: '{request.user}'. "
@@ -744,15 +725,27 @@ class MoveStorageItemView(LoginRequiredMixin, View):
 
 
 class DestinationFolderAjaxView(LoginRequiredMixin, View):
-    def get(self, request):
-        item_id = request.GET.get('item_id')
+    """Обрабатывает AJAX-запрос для получения списка доступных директорий для перемещения."""
+
+    def get(self, request: HttpRequest) -> JsonResponse:
+        """
+        Возвращает JSON-список директорий, в которые можно переместить объект.
+
+        Принимает GET-параметр 'item_id' для идентификации перемещаемого объекта.
+
+        :param request: Объект запроса Django.
+        :return: JsonResponse со списком директорий или с ошибкой.
+                 Успешный ответ: [{"id": 1, "display_name": "path/to/folder"}, ...]
+                 Ответ с ошибкой: {"error": "сообщение"}
+        """
+        item_id: str = request.GET.get('item_id', '')
         if not item_id:
             return JsonResponse(
                 {'error': 'Объект для перемещения не передан'},
                 status=400,
             )
         available_directories = UserFile.objects.available_directories_to_move(request.user, item_id)
-        data = []
+        data: list[dict[str, str | UUID]] = []
         for directory in available_directories:
             data.append({"id": directory.id, "display_name": directory.get_display_path})
 

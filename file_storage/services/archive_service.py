@@ -47,7 +47,6 @@ class ZipStreamGenerator:
         :param file_obj: Объект UserFile (файл или папка).
         :returns: Строка с относительным путем для объекта в ZIP-архиве.
         """
-
         relative_path = file_obj.path.replace(self.directory.path, '', 1)
 
         if relative_path.startswith('/'):
@@ -64,8 +63,7 @@ class ZipStreamGenerator:
 
         :param s3_key: Ключ (путь) объекта в S3-бакете.
         :yields: Части (байтовые строки) файла.
-        :raises StorageError: Если возникает проблема при доступе к S3 (например, файл не найден, нет прав).
-                               Это исключение должно быть возбуждено minio_client или обработчиком ответа.
+        :raises StorageError: Если возникает проблема при доступе.
         """
         try:
             response: dict = minio_client.s3_client.get_object(
@@ -81,7 +79,7 @@ class ZipStreamGenerator:
             yield chunk
 
     def generate(self) -> Iterator[bytes]:
-        """Генерирует ZIP-архив по частям"""
+        """Генерирует ZIP-архив по частям."""
         zs = ZipStream(compress_type=ZIP_DEFLATED)
 
         for file_obj in self.all_files:

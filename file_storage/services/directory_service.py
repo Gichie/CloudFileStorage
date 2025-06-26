@@ -20,9 +20,8 @@ BUCKET_NAME = settings.AWS_STORAGE_BUCKET_NAME
 
 
 class DirectoryService:
-    """
-    Сервисный слой для операций с файлами и директориями.
-    """
+    """Сервисный слой для операций с файлами и директориями."""
+
     @staticmethod
     def create(user: User, directory_name: str, parent_object: UserFile | None = None) -> None:
         """Создает новую директорию в базе данных и соответствующий маркер в S3.
@@ -162,9 +161,7 @@ class DirectoryService:
 
     @staticmethod
     def get_parent_or_create_directories_from_path(user, parent_object, path_components):
-        """
-        Создает иерархию директорий по указанному пути
-        """
+        """Создает иерархию директорий по указанному пути."""
         current_parent = parent_object
 
         for directory_name in path_components:
@@ -323,26 +320,40 @@ class DirectoryService:
                 DirectoryService._update_children_path(child)
 
     @staticmethod
-    def move(storage_item: UserFile, destination_folder: UserFile | None = None) -> None:
+    def move(user: User, item_id: str, destination_folder_id: str) -> None:
         """
-        Перемещает объект файловой системы (файл или папку) в новую родительскую папку.
+        Выполняет операцию перемещения файла или папки.
 
-        Проверяет конфликт имен в папке назначения. Если конфликта нет,
-        изменяет родителя объекта и рекурсивно обновляет пути для всех
-        дочерних элементов, если перемещается папка.
+        Находит перемещаемый объект и папку назначения по их ID, проверяя
+        принадлежность пользователю. Проверяет конфликт имен, затем выполняет
+        перемещение в базе данных и в S3-хранилище в рамках одной транзакции.
 
-        :param storage_item: Экземпляр модели UserFile, который нужно переместить.
-        :param destination_folder: Экземпляр UserFile (папка), куда нужно переместить.
-                                  Если None, объект перемещается в корень.
+        :param user: Пользователь, инициировавший операцию.
+        :param item_id: ID объекта (UserFile), который нужно переместить.
+        :param destination_folder_id: ID папки назначения.
         :raises NameConflictError: Если в папке назначения уже существует
                                    объект с таким же именем.
         """
+        storage_item = UserFile.objects.get(user=user, id=item_id)
+        old_key = storage_item.path
+
+        if destination_folder_id:
+            destination_folder = UserFile.objects.get(
+                user=user, id=destination_folder_id, object_type=FileType.DIRECTORY
+            )
+        else:
+            destination_folder = None
+
         if UserFile.objects.file_exists(storage_item.user, destination_folder, storage_item.name):
             raise NameConflictError(
                 "Файл или папка с таким именем уже существует",
                 storage_item.name,
                 destination_folder,
             )
+
         storage_item.parent = destination_folder
 
-        DirectoryService._update_children_path(storage_item)
+        with transaction.atomic():
+            DirectoryService._update_children_path(storage_item)
+            new_key = storage_item.path
+            minio_client.move_object(old_key, new_key)
