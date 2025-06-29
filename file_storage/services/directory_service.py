@@ -1,5 +1,7 @@
 """Сервис для операций, связанных с директориями."""
 import logging
+from typing import Iterator
+from uuid import UUID
 
 from botocore.exceptions import NoCredentialsError, ClientError, BotoCoreError
 from django.contrib.auth.models import User
@@ -12,6 +14,7 @@ from cloud_file_storage import settings
 from file_storage.exceptions import StorageError, NameConflictError, DatabaseError
 from file_storage.forms import RenameItemForm
 from file_storage.models import UserFile, FileType
+from file_storage.services.archive_service import ZipStreamGenerator
 from file_storage.storages.minio import minio_client
 
 logger = logging.getLogger(__name__)
@@ -21,8 +24,12 @@ BUCKET_NAME = settings.AWS_STORAGE_BUCKET_NAME
 
 class DirectoryService:
     """Сервисный слой для операций с файлами и директориями."""
-    @staticmethod
-    def create(user: User, directory_name: str, parent_pk: str) -> None:
+
+    def __init__(self, user: User, s3_client=minio_client):
+        self.user = user
+        self.s3_client = s3_client
+
+    def create(self, directory_name: str, parent_pk: str) -> None:
         """Создает новую директорию в базе данных и соответствующий маркер в S3.
 
         Операция выполняется в рамках транзакции базы данных. В случае ошибки
@@ -30,21 +37,21 @@ class DirectoryService:
         выбрасываются соответствующие кастомные исключения.
 
         :param parent_pk: ID родительской директории.
-        :param user: Пользователь, создающий директорию.
         :param directory_name: Имя новой директории.
 
         :raises NameConflictError: Если название уже существует в текущей директории.
         :raises DatabaseError: При ошибках целостности или других проблемах с БД.
         :raises StorageError: При ошибках взаимодействия с S3 (аутентификация, клиентские ошибки).
         """
-        parent_object = DirectoryService.get_parent_directory(user, parent_pk)
+        parent_object = self.get_parent_directory(self.user, parent_pk)
 
         try:
             with transaction.atomic():
-                if UserFile.objects.object_with_name_exists(user, directory_name, parent_object):
+                if UserFile.objects.object_with_name_exists(self.user, directory_name, parent_object):
                     logger.warning(
-                        f"User {user.username}: Directory: {directory_name} "
-                        f"already exists in parent '{parent_object.name if parent_object else 'root'}'.",
+                        f"User {self.user.username}: Directory: {directory_name} "
+                        f"already exists in parent "
+                        f"'{parent_object.name if parent_object else 'root'}'.",
                         exc_info=True
                     )
                     raise NameConflictError(
@@ -55,7 +62,7 @@ class DirectoryService:
                     )
 
                 new_directory: UserFile | None = UserFile(
-                    user=user,
+                    user=self.user,
                     name=directory_name,
                     object_type=FileType.DIRECTORY,
                     parent=parent_object,
@@ -63,10 +70,10 @@ class DirectoryService:
                 new_directory.save()
 
                 key = new_directory.get_s3_key_for_directory_marker()
-                minio_client.create_empty_directory_marker(BUCKET_NAME, key)
+                self.s3_client.create_empty_directory_marker(BUCKET_NAME, key)
 
                 logger.info(
-                    f"User {user.username} Directory successfully created in DB and S3. "
+                    f"User {self.user.username} Directory successfully created in DB and S3. "
                     f"Path={key}, DB ID={new_directory.id}"
                 )
 
@@ -108,8 +115,7 @@ class DirectoryService:
             user=directory.user, path__startswith=new_path, object_type=FileType.FILE
         ).update(file=Replace('file', Value(old_path), Value(new_path)))
 
-    @staticmethod
-    def rename(object_instance: UserFile, form: RenameItemForm) -> None:
+    def rename(self, object_instance: UserFile, form: RenameItemForm) -> None:
         """
         Обрабатывает процесс переименования объекта в БД и в S3/Minio.
 
@@ -133,17 +139,16 @@ class DirectoryService:
             new_minio_key = object_instance.get_full_path()
 
             if object_instance.object_type == FileType.FILE:
-                minio_client.rename_file(old_minio_key, new_minio_key)
+                self.s3_client.rename_file(old_minio_key, new_minio_key)
 
             else:
                 if old_minio_key and new_minio_key and old_minio_key != new_minio_key:
-                    DirectoryService._update_children_paths(
+                    self._update_children_paths(
                         object_instance, old_minio_key, new_minio_key
                     )
                 minio_client.rename_directory(old_minio_key, new_minio_key)
 
-    @staticmethod
-    def delete_obj(storage_object: UserFile) -> None:
+    def delete_obj(self, storage_object: UserFile) -> None:
         """
         Удаляет объект (файл или папку) из БД и S3-хранилища.
 
@@ -169,19 +174,18 @@ class DirectoryService:
 
                 # delete from s3
                 prefix = storage_object.path
-                minio_client.delete_objects_by_prefix(prefix)
+                self.s3_client.delete_objects_by_prefix(prefix)
 
         logger.info(
             f"User: '{storage_object.user}' deleted {storage_object.object_type} from DB successful")
 
-    @staticmethod
-    def get_parent_or_create_directories_from_path(user, parent_object, path_components):
+    def get_parent_or_create_directories_from_path(self, parent_object, path_components):
         """Создает иерархию директорий по указанному пути."""
         current_parent = parent_object
 
         for directory_name in path_components:
             directory_object, created = UserFile.objects.get_or_create(
-                user=user,
+                user=self.user,
                 name=directory_name,
                 parent=current_parent,
                 object_type=FileType.DIRECTORY,
@@ -189,18 +193,19 @@ class DirectoryService:
 
             if created:
                 logger.debug(
-                    f"User '{user.username}': Created directory '{directory_name}' "
+                    f"User '{self.user.username}': Created directory '{directory_name}' "
                     f"(ID: {directory_object.id}) under parent "
                     f"'{current_parent.name if current_parent else 'root'}'."
                 )
                 try:
                     # Создание "директории" в S3/Minio
                     key = directory_object.get_s3_key_for_directory_marker()
-                    minio_client.create_empty_directory_marker(BUCKET_NAME, key)
-                    logger.debug(f"User '{user.username}': S3 marker created for directory '{key}'.")
+                    self.s3_client.create_empty_directory_marker(BUCKET_NAME, key)
+                    logger.debug(
+                        f"User '{self.user.username}': S3 marker created for directory '{key}'.")
                 except (NoCredentialsError, ClientError, BotoCoreError) as e:
                     logger.error(
-                        f"User '{user.username}': FAILED to create S3 marker "
+                        f"User '{self.user.username}': FAILED to create S3 marker "
                         f"for directory '{directory_object.name}' "
                         f"(ID: {directory_object.id}). Error: {e}",
                         exc_info=True
@@ -210,14 +215,12 @@ class DirectoryService:
             current_parent = directory_object
         return current_parent
 
-    @staticmethod
-    def get_parent_directory(user: User, parent_pk: str | int | None) -> UserFile | None:
+    def get_parent_directory(self, parent_pk: str | int | None) -> UserFile | None:
         """Получает родительскую директорию по её первичному ключу.
 
         Проверяет, что директория принадлежит указанному пользователю и
         имеет тип "директория".
 
-        :param user: Пользователь, для которого запрашивается директория.
         :param parent_pk: Первичный ключ родительской директории. Может быть ``None``,
                           если создается объект в корневой директории пользователя.
                           Может быть строкой (из POST) или числом.
@@ -232,11 +235,11 @@ class DirectoryService:
             try:
                 parent_object: UserFile = UserFile.objects.get(
                     pk=parent_pk,
-                    user=user,
+                    user=self.user,
                     object_type=FileType.DIRECTORY,
                 )
                 logger.info(
-                    f"User: '{user.username}' "
+                    f"User: '{self.user.username}' "
                     f"successfully identified parent directory: '{parent_object.name}' "
                     f"(ID: {parent_object.id}) for new directory creation."
                 )
@@ -245,7 +248,7 @@ class DirectoryService:
 
             except UserFile.DoesNotExist:
                 logger.warning(
-                    f"Parent directory not found. pk={parent_pk} user={user.username} ID: {user.id} "
+                    f"Parent directory not found. pk={parent_pk} user={self.user} ID: {self.user.id} "
                     f"Requested parent_pk: '{parent_pk}'. "
                     f"Query was for object_type: {FileType.DIRECTORY}.",
                     exc_info=True
@@ -254,7 +257,7 @@ class DirectoryService:
 
             except (ValueError, TypeError):
                 logger.error(
-                    f"User={user.username} ID: {user.id} "
+                    f"User={self.user.username} ID: {self.user.id} "
                     f"object_type={FileType.DIRECTORY} Invalid parent folder identifier. "
                     f"pk={parent_pk}",
                     exc_info=True
@@ -262,11 +265,10 @@ class DirectoryService:
                 raise
 
             except Exception as e:
-                logger.error(f"Unexpected error. User: {user}. {e}")
+                logger.error(f"Unexpected error. User: {self.user}. {e}")
                 raise
 
-    @staticmethod
-    def get_current_directory_from_path(user: User, unencoded_path: str) -> UserFile | None:
+    def get_current_directory_from_path(self, unencoded_path: str) -> UserFile | None:
         """
         Возвращает объект директории на основе предоставленного пути.
 
@@ -274,7 +276,6 @@ class DirectoryService:
         Выполняет поиск директории в базе данных по пользователю,
         нормализованному пути и типу "директория".
 
-        :param user: Пользователь, для которого выполняется поиск.
         :param unencoded_path: Строка пути, не кодированная для URL.
         :raises Http404: Если директория не найдена или найдено несколько директорий.
         :return: Объект ``UserFile``, представляющий текущую директорию, или ``None``, если путь пустой
@@ -289,26 +290,26 @@ class DirectoryService:
 
             if path_components:
                 name_part = path_components[-1]
-                path = f"user_{user.id}/{safe_path}/"
+                path = f"user_{self.user.id}/{safe_path}/"
 
                 if path:
                     try:
                         current_directory = UserFile.objects.get(
-                            user=user,
+                            user=self.user,
                             path=path,
                             object_type=FileType.DIRECTORY,
                         )
 
                     except UserFile.DoesNotExist:
                         logger.warning(
-                            f"User '{user.username}': "
+                            f"User '{self.user.username}': "
                             f"Directory not found for path component '{name_part}' "
                             f"Full requested path: '{unencoded_path}'. Raising Http404."
                         )
                         raise Http404("Запрошенная директория не найдена или не является директорией.")
                     except UserFile.MultipleObjectsReturned:
                         logger.error(
-                            f"User '{user.username}': "
+                            f"User '{self.user.username}': "
                             f"Multiple objects returned for path component '{name_part}' "
                             f"Full requested path: '{unencoded_path}'. "
                             f"This indicates a data integrity issue. Raising Http404."
@@ -317,8 +318,7 @@ class DirectoryService:
 
         return current_directory
 
-    @staticmethod
-    def _update_children_path(storage_item: UserFile) -> None:
+    def _update_children_path(self, storage_item: UserFile) -> None:
         """
         Рекурсивно обновляет поле `path` для самого объекта и всех его дочерних элементов.
 
@@ -332,10 +332,9 @@ class DirectoryService:
 
         if storage_item.object_type == FileType.DIRECTORY:
             for child in storage_item.children.iterator():
-                DirectoryService._update_children_path(child)
+                self._update_children_path(child)
 
-    @staticmethod
-    def move(user: User, item_id: str, destination_folder_id: str) -> None:
+    def move(self, item_id: str, destination_folder_id: str) -> None:
         """
         Выполняет операцию перемещения файла или папки.
 
@@ -343,18 +342,17 @@ class DirectoryService:
         принадлежность пользователю. Проверяет конфликт имен, затем выполняет
         перемещение в базе данных и в S3-хранилище в рамках одной транзакции.
 
-        :param user: Пользователь, инициировавший операцию.
         :param item_id: ID объекта (UserFile), который нужно переместить.
         :param destination_folder_id: ID папки назначения.
         :raises NameConflictError: Если в папке назначения уже существует
                                    объект с таким же именем.
         """
-        storage_item = UserFile.objects.get(user=user, id=item_id)
+        storage_item = UserFile.objects.get(user=self.user, id=item_id)
         old_key = storage_item.path
 
         if destination_folder_id:
             destination_folder = UserFile.objects.get(
-                user=user, id=destination_folder_id, object_type=FileType.DIRECTORY
+                user=self.user, id=destination_folder_id, object_type=FileType.DIRECTORY
             )
         else:
             destination_folder = None
@@ -370,6 +368,52 @@ class DirectoryService:
         storage_item.parent = destination_folder
 
         with transaction.atomic():
-            DirectoryService._update_children_path(storage_item)
+            self._update_children_path(storage_item)
             new_key = storage_item.path
-            minio_client.move_object(old_key, new_key)
+            self.s3_client.move_object(old_key, new_key)
+
+    def download(self, directory_id: UUID) -> tuple[Iterator[bytes], str]:
+        """Создает поток данных ZIP-архива и его имя для указанной директории.
+
+        Метод координирует процесс создания ZIP-архива для директории пользователя.
+        Он выполняет проверку прав доступа, убеждается в наличии всех дочерних
+        файлов в S3-хранилище и инициализирует генератор для потоковой передачи
+        данных, чтобы избежать загрузки всего архива в оперативную память сервера.
+
+        :param directory_id: UUID директории, которую необходимо заархивировать.
+        :raises DatabaseError: Если директория с указанным ``directory_id`` не найдена
+                               в базе данных или не принадлежит указанному ``user``.
+        :raises StorageError: Если один или несколько дочерних файлов директории
+                              отсутствуют в S3-совместимом хранилище.
+        :return: Кортеж, содержащий два элемента:
+                 1. Итератор с байтами ZIP-архива.
+                 2. Сгенерированное имя файла для этого архива (например, 'MyFolder.zip').
+        """
+        try:
+            directory: UserFile = UserFile.objects.get(
+                id=directory_id, user=self.user, object_type=FileType.DIRECTORY
+            )
+        except UserFile.DoesNotExist:
+            logger.warning(
+                f"Попытка доступа к несуществующей или чужой папке: id={directory_id}, "
+                f"user={self.user}",
+                exc_info=True
+            )
+            raise DatabaseError(
+                "Запрошенная папка не найдена или у вас нет прав на её скачивание."
+            )
+
+        all_files = UserFile.objects.get_all_children_files(directory)
+
+        if not self.s3_client.check_files_exist(all_files):
+            raise StorageError("Ошибка. Не удалось прочитать некоторые файлы из хранилища")
+
+        zip_generator = ZipStreamGenerator(directory, all_files)
+        zip_filename = f"{directory.name}.zip"
+
+        zip_stream = zip_generator.generate()
+
+        logger.info(f"User '{self.user.username}' started "
+                    f"downloading directory '{directory.name}' "
+                    f"as '{zip_filename}'.")
+        return zip_stream, zip_filename

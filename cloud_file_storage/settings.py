@@ -100,8 +100,9 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
 # Максимальный размер тела запроса (в байтах). Должен быть согласован с Nginx.
 # Django по умолчанию 2.5 МБ.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024  # 500 MB
-
 DATA_UPLOAD_MAX_NUMBER_FILES = 500
+
+PRESIGNED_URL_LIFETIME_SECONDS = 1800  # Время жизни ссылки на скачивание файла
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

@@ -4,13 +4,12 @@ from functools import wraps
 from typing import Type, Any, Callable
 from uuid import UUID
 
-from botocore.exceptions import ClientError, ParamValidationError
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import UploadedFile
-from django.db import transaction, IntegrityError
+from django.db import IntegrityError
 from django.db.models import QuerySet
 from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, Http404, HttpRequest
 from django.shortcuts import get_object_or_404, redirect
@@ -20,12 +19,9 @@ from django.views.generic import ListView
 from cloud_file_storage import settings
 from file_storage.exceptions import (StorageError, NameConflictError, DatabaseError, InvalidPathError)
 from file_storage.forms import FileUploadForm, DirectoryCreationForm, RenameItemForm
-from file_storage.mixins import QueryParamMixin
-from file_storage.models import UserFile, FileType
-from file_storage.services import upload_service
-from file_storage.services.archive_service import ZipStreamGenerator
-from file_storage.services.directory_service import DirectoryService
-from file_storage.services.upload_service import get_message_and_status, upload_file
+from file_storage.mixins import QueryParamMixin, DirectoryServiceMixin, FileServiceMixin
+from file_storage.models import UserFile
+from file_storage.services.upload_service import get_message_and_status, UploadService
 from file_storage.storages.minio import minio_client
 from file_storage.utils import ui
 from file_storage.utils.path_utils import encode_path_for_url
@@ -72,7 +68,7 @@ def handle_service_exceptions(
     return _wrapped_view_func
 
 
-class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
+class FileListView(QueryParamMixin, LoginRequiredMixin, DirectoryServiceMixin, ListView):
     """
     Отображает список файлов и папок для аутентифицированного пользователя.
 
@@ -98,8 +94,8 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
         super().setup(request, *args, **kwargs)
         self.user: User = request.user
         self.current_path_unencoded: str = request.GET.get('path', '')
-        self.current_directory: UserFile | None = DirectoryService.get_current_directory_from_path(
-            self.user, self.current_path_unencoded
+        self.current_directory: UserFile | None = self.service.get_current_directory_from_path(
+            self.current_path_unencoded
         )
 
     def get_queryset(self) -> QuerySet[UserFile]:
@@ -186,7 +182,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
         directory_name: str = form.cleaned_data['name']
 
         try:
-            DirectoryService.create(self.user, directory_name, parent_pk)
+            self.service.create(directory_name, parent_pk)
             return JsonResponse({
                 'status': 'success',
                 'message': 'Папка успешно создана!',
@@ -211,7 +207,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, ListView):
             }, status=500)
 
 
-class FileUploadAjaxView(LoginRequiredMixin, View):
+class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
     """View для обработки AJAX-запросов на загрузку файлов и папок."""
 
     @staticmethod
@@ -258,10 +254,11 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
             f"Target parent_id: '{parent_id}'."
         )
 
-        parent_object = DirectoryService.get_parent_directory(user, parent_id)
+        parent_object = self.service.get_parent_directory(parent_id)
 
         results: list[dict[str, str]] = []
-        cache: dict[str, UserFile] = {}
+
+        upload_service = UploadService(user, minio_client)
 
         for uploaded_file, rel_path in zip(files, relative_paths):
             form_data: dict[str, Any] = {'parent': parent_object.pk if parent_object else None}
@@ -281,7 +278,7 @@ class FileUploadAjaxView(LoginRequiredMixin, View):
                 })
 
             try:
-                upload_file(user, uploaded_file, parent_object, rel_path, cache)
+                upload_service.upload_file(uploaded_file, rel_path, parent_object)
                 results.append({'name': uploaded_file.name, 'status': 'success'})
 
             except InvalidPathError as e:
@@ -322,10 +319,9 @@ class FileSearchView(QueryParamMixin, LoginRequiredMixin, ListView):
     Используется Пагинация.
     """
 
-    template_name: str = 'file_storage/search_results.html'
-    paginate_by: int = 25
-    context_object_name: str = 'search_results'
-
+    template_name = 'file_storage/search_results.html'
+    paginate_by = 25
+    context_object_name = 'search_results'
     query: str | None = None
 
     def setup(self, request: HttpRequest, *args, **kwargs) -> None:
@@ -373,84 +369,49 @@ class FileSearchView(QueryParamMixin, LoginRequiredMixin, ListView):
         return context
 
 
-class DownloadFileView(LoginRequiredMixin, View):
+class DownloadFileView(LoginRequiredMixin, FileServiceMixin, View):
     """
     Обрабатывает запросы на скачивание одного файла.
 
-    При GET-запросе проверяет права пользователя на файл, его наличие в S3,
-    генерирует presigned URL для скачивания и перенаправляет пользователя по этому URL.
+    При GET-запросе проверяет права пользователя на файл, вызывает сервис для
+    генерации ссылки на скачивание файла и перенаправляет пользователя по этому URL.
     В случае ошибки или если файл не найден, показывает сообщение и перенаправляет
-    пользователя обратно на страницу, с которой был сделан запрос (или на страницу списка файлов).
+    пользователя обратно на страницу, с которой был сделан запрос.
     """
 
-    def get(self, request: HttpRequest, file_id: int) -> HttpResponseRedirect:
+    def get(self, request: HttpRequest, file_id: UUID) -> HttpResponseRedirect:
         """
         Обрабатывает GET-запрос на скачивание файла.
 
         :param request: Объект HttpRequest.
         :param file_id: ID файла (UserFile) для скачивания.
-        :return: HttpResponseRedirect на presigned URL для скачивания файла
+        :return: HttpResponseRedirect на download URL для скачивания файла
                  или на предыдущую страницу/список файлов в случае ошибки.
         """
         unencoded_path: str = request.GET.get("path_param", "")
-        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+        redirect_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
 
         try:
-            user_file = get_object_or_404(
-                UserFile, id=file_id, user=request.user, object_type=FileType.FILE
-            )
-        except Http404:
-            logger.warning(
-                f"Попытка доступа к несуществующему или чужому файлу: id={file_id}, "
-                f"user={request.user.id}"
-            )
-            messages.warning(request, "Запрошенный файл не найден или "
-                                      "у вас нет прав на его скачивание.")
-            return redirect(encoded_path)
+            download_url = self.service.generate_download_url(file_id)
+            return HttpResponseRedirect(download_url)
 
-        s3_key: str = user_file.file.name
+        except DatabaseError as e:
+            messages.warning(request, str(e))
 
-        try:
-            if minio_client.check_files_exist((user_file,)):
-                presigned_url: str = minio_client.s3_client.generate_presigned_url(
-                    'get_object',
-                    Params={
-                        'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
-                        'Key': s3_key,
-                        'ResponseContentDisposition': f'attachment; filename="{user_file.name}"'
-                    },
-                    ExpiresIn=1700
-                )
-                logger.info(
-                    f"File downloaded successfully. s3_key: {s3_key}, presigned_url: {presigned_url}")
-                return HttpResponseRedirect(presigned_url)
+        except StorageError as e:
+            messages.warning(request, e)
 
-            else:
-                logger.warning(
-                    f"User: '{user_file.user}. File does not found in s3/minio storage'",
-                    exc_info=True
-                )
-                messages.warning(request, f"Такого файла: '{user_file}' не существует")
-
-        except ClientError as e:
-            logger.error(f"Error generating presigned URL for s3_key: {s3_key}: {e}")
-            messages.error(
-                request, "Произошла ошибка при обращении к хранилищу, попробуйте позже"
-            )
-        except ParamValidationError as e:
-            logger.error(f"{e}")
-            messages.error(request, "Произошла ошибка при запросе к хранилищу")
         except Exception as e:
-            logger.error(f"Unexpected error: {e}")
+            logger.error(f"Unexpected error: {e}", exc_info=True)
             messages.error(request, "Произошла ошибка при скачивании файла, попробуйте позже")
 
-        return redirect(encoded_path)
+        return redirect(redirect_path)
 
 
-class DownloadDirectoryView(LoginRequiredMixin, View):
+class DownloadDirectoryView(LoginRequiredMixin, DirectoryServiceMixin, View):
     """Обрабатывает запросы на скачивание директории пользователя в виде ZIP-архива."""
 
-    def get(self, request: HttpRequest, directory_id: int) -> StreamingHttpResponse | Any:
+    def get(self, request: HttpRequest, directory_id: UUID) -> StreamingHttpResponse | Any:
         """
         Обрабатывает GET-запрос для скачивания директории.
 
@@ -465,57 +426,36 @@ class DownloadDirectoryView(LoginRequiredMixin, View):
         :returns: StreamingHttpResponse с ZIP-архивом или HttpResponseRedirect в случае ошибки.
         """
         unencoded_path: str = request.GET.get("path_param", "")
-        encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
+        redirect_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
 
         user: User = request.user
-
         try:
-            directory: UserFile = get_object_or_404(
-                UserFile, id=directory_id, user=user, object_type=FileType.DIRECTORY
-            )
-        except Http404:
-            logger.warning(
-                f"Попытка доступа к несуществующей или чужой папке: id={directory_id}, "
-                f"user={request.user}"
-            )
-            messages.warning(request, "Запрошенная папка не найдена или "
-                                      "у вас нет прав на её скачивание.")
-            return redirect(encoded_path)
+            zip_generator, zip_filename = self.service.download(directory_id)
 
-        all_files = UserFile.objects.get_all_children_files(directory)
+        except DatabaseError as e:
+            messages.warning(request, e)
+            return redirect(redirect_path)
 
-        if not minio_client.check_files_exist(all_files):
-            messages.error(request, "Не удалось прочитать некоторые файлы из хранилища")
-            return redirect(encoded_path)
+        except StorageError as e:
+            messages.error(request, e)
+            return redirect(redirect_path)
 
-        zip_generator = ZipStreamGenerator(directory, all_files)
-
-        zip_filename = f"{directory.name}.zip"
-        encoded_zip_filename: str = urllib.parse.quote(zip_filename)
-
-        try:
-            response = StreamingHttpResponse(
-                zip_generator.generate(), content_type='application/zip'
-            )
-        except StorageError:
-            # Логирование внутри _check_files_exist
-            messages.error(request, "Не удалось прочитать некоторые файлы из хранилища")
-            return redirect(encoded_path)
         except Exception as e:
-            logger.error(f"Unexpected error: {e}")
+            logger.error(f"Unexpected error: {e}", exc_info=True)
             messages.error(request, 'Произошла ошибка при скачивании архива')
-            return redirect(encoded_path)
+            return redirect(redirect_path)
+
+        response = StreamingHttpResponse(zip_generator, content_type='application/zip')
+
+        encoded_zip_filename: str = urllib.parse.quote(zip_filename)
 
         response['Content-Disposition'] = f'attachment; filename="{encoded_zip_filename}"'
         response['Cache-Control'] = 'no-cache'
 
-        logger.info(f"User '{request.user.username}' started "
-                    f"downloading directory '{directory.name}' "
-                    f"as '{zip_filename}'.")
         return response
 
 
-class DeleteView(LoginRequiredMixin, View):
+class DeleteView(LoginRequiredMixin, DirectoryServiceMixin, View):
     """Обрабатывает удаление файлов и папок пользователя."""
 
     def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponseRedirect:
@@ -549,7 +489,7 @@ class DeleteView(LoginRequiredMixin, View):
             return redirect(encoded_path)
 
         try:
-            DirectoryService.delete_obj(storage_object)
+            self.service.delete_obj(storage_object)
             messages.success(
                 request, f"{storage_object.get_object_type_display()} успешно удален(а)!"
             )
@@ -562,7 +502,7 @@ class DeleteView(LoginRequiredMixin, View):
         return redirect(encoded_path)
 
 
-class RenameView(LoginRequiredMixin, View):
+class RenameView(LoginRequiredMixin, DirectoryServiceMixin, View):
     """Обрабатывает POST-запрос для переименования файла или папки пользователя."""
 
     def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponseRedirect:
@@ -613,7 +553,7 @@ class RenameView(LoginRequiredMixin, View):
         form = RenameItemForm(request.POST, instance=object_instance)
         if form.is_valid():
             try:
-                DirectoryService.rename(object_instance, form)
+                self.service.rename(object_instance, form)
 
                 logger.info(f"User '{user}' renamed {object_instance.object_type} "
                             f"to '{form.cleaned_data['name']}'")
@@ -649,7 +589,7 @@ class RenameView(LoginRequiredMixin, View):
         return redirect(encoded_path)
 
 
-class MoveStorageItemView(LoginRequiredMixin, View):
+class MoveStorageItemView(LoginRequiredMixin, DirectoryServiceMixin, View):
     """Обрабатывает POST-запрос для перемещения файла или папки пользователя."""
 
     def post(self, request: HttpRequest) -> HttpResponseRedirect:
@@ -671,7 +611,7 @@ class MoveStorageItemView(LoginRequiredMixin, View):
 
         encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
         try:
-            DirectoryService.move(request.user, item_id, destination_folder_id)
+            self.service.move(item_id, destination_folder_id)
         except ValidationError as e:
             logger.warning(
                 f"User: '{request.user}'. "

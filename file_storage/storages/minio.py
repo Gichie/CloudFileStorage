@@ -71,7 +71,10 @@ class MinioClient:
                     )
 
                 except ClientError as e:
-                    logger.error(f"Не удалось получить метаданные файла {s3_key}: {e}")
+                    logger.error(
+                        f"Не удалось получить метаданные файла '{file.name}': {e}",
+                        exc_info=True
+                    )
                     return False
         return True
 
