@@ -101,29 +101,3 @@ class UploadService:
 
         self.file_service.create_file(uploaded_file, parent_object, log_prefix)
         return dir_path, parent_object
-
-
-def get_message_and_status(results: list[dict[str, str]]) -> tuple[dict[str, str], int]:
-    """
-    Формирует общее сообщение и HTTP-статус на основе результатов обработки файлов.
-
-    :param results: Список словарей, где каждый словарь представляет результат
-                    обработки одного файла и содержит ключи 'status' и 'name'.
-    :return: Кортеж из словаря с сообщением и списком результатов, и HTTP-статуса.
-             HTTP-статус 200 если все успешно, 207 (Multi-Status) если были ошибки.
-    """
-    any_errors: bool = any(res['status'] == 'error' for res in results)
-
-    if any_errors:
-        if all(res['status'] == 'error' for res in results):
-            message = 'Файл не удалось загрузить.'
-        else:
-            message = 'Некоторые файлы были загружены с ошибкой.'
-    else:
-        message = 'Все файлы успешно загружены.'
-
-    http_status = 200
-    if any_errors:
-        http_status = 207
-
-    return {'message': message, 'results': results}, http_status

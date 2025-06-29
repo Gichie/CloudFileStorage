@@ -22,7 +22,6 @@ from file_storage.forms import FileUploadForm, DirectoryCreationForm, RenameItem
 from file_storage.mixins import QueryParamMixin, DirectoryServiceMixin, FileServiceMixin
 from file_storage.models import UserFile
 from file_storage.services.factories import create_upload_service
-from file_storage.services.upload_service import get_message_and_status
 from file_storage.utils import ui
 from file_storage.utils.path_utils import encode_path_for_url
 
@@ -224,6 +223,32 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
         error_string: str = "; ".join(error_messages)
         return error_string
 
+    @staticmethod
+    def _get_message_and_status(results: list[dict[str, str]]) -> tuple[dict[str, str], int]:
+        """
+        Формирует общее сообщение и HTTP-статус на основе результатов обработки файлов.
+
+        :param results: Список словарей, где каждый словарь представляет результат
+                        обработки одного файла и содержит ключи 'status' и 'name'.
+        :return: Кортеж из словаря с сообщением и списком результатов, и HTTP-статуса.
+                 HTTP-статус 200 если все успешно, 207 (Multi-Status) если были ошибки.
+        """
+        any_errors: bool = any(res['status'] == 'error' for res in results)
+
+        if any_errors:
+            if all(res['status'] == 'error' for res in results):
+                message = 'Файл не удалось загрузить.'
+            else:
+                message = 'Некоторые файлы были загружены с ошибкой.'
+        else:
+            message = 'Все файлы успешно загружены.'
+
+        http_status = 200
+        if any_errors:
+            http_status = 207
+
+        return {'message': message, 'results': results}, http_status
+
     @handle_service_exceptions
     def post(self, request: HttpRequest, *args, **kwargs) -> JsonResponse:
         """
@@ -306,7 +331,7 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
                     'error': 'Такой файл уже существует'
                 })
 
-        response_data, status_code = get_message_and_status(results)
+        response_data, status_code = self._get_message_and_status(results)
         logger.info(f"User: '{user}'. {response_data.get('message')}. Status_code: {status_code}")
         return JsonResponse(response_data, status=status_code)
 
