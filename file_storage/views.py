@@ -578,7 +578,7 @@ class RenameView(LoginRequiredMixin, DirectoryServiceMixin, View):
         form = RenameItemForm(request.POST, instance=object_instance)
         if form.is_valid():
             try:
-                self.service.rename(object_instance, form)
+                self.service.rename(object_instance)
 
                 logger.info(f"User '{user}' renamed {object_instance.object_type} "
                             f"to '{form.cleaned_data['name']}'")

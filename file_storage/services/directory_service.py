@@ -115,7 +115,7 @@ class DirectoryService:
             user=directory.user, path__startswith=new_path, object_type=FileType.FILE
         ).update(file=Replace('file', Value(old_path), Value(new_path)))
 
-    def rename(self, object_instance: UserFile, form: RenameItemForm) -> None:
+    def rename(self, object_instance: UserFile) -> None:
         """
         Обрабатывает процесс переименования объекта в БД и в S3/Minio.
 
@@ -127,7 +127,6 @@ class DirectoryService:
         4. Для папок, обновляет пути всех дочерних объектов в БД.
 
         :param object_instance: Экземпляр UserFile до изменения.
-        :param form: Валидная форма с новыми данными.
         """
         with transaction.atomic():
             if object_instance.object_type == FileType.FILE:
@@ -135,7 +134,8 @@ class DirectoryService:
             else:
                 old_minio_key = object_instance.path
 
-            form.save()
+            object_instance.save()
+
             new_minio_key = object_instance.get_full_path()
 
             if object_instance.object_type == FileType.FILE:
