@@ -21,8 +21,8 @@ from file_storage.exceptions import (StorageError, NameConflictError, DatabaseEr
 from file_storage.forms import FileUploadForm, DirectoryCreationForm, RenameItemForm
 from file_storage.mixins import QueryParamMixin, DirectoryServiceMixin, FileServiceMixin
 from file_storage.models import UserFile
-from file_storage.services.upload_service import get_message_and_status, UploadService
-from file_storage.storages.minio import minio_client
+from file_storage.services.factories import create_upload_service
+from file_storage.services.upload_service import get_message_and_status
 from file_storage.utils import ui
 from file_storage.utils.path_utils import encode_path_for_url
 
@@ -258,7 +258,7 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
 
         results: list[dict[str, str]] = []
 
-        upload_service = UploadService(user, minio_client)
+        upload_service = create_upload_service(user)
 
         for uploaded_file, rel_path in zip(files, relative_paths):
             form_data: dict[str, Any] = {'parent': parent_object.pk if parent_object else None}

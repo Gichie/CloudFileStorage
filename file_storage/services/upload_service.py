@@ -8,16 +8,15 @@ from file_storage.exceptions import StorageError, InvalidPathError
 from file_storage.models import UserFile
 from file_storage.services.directory_service import DirectoryService
 from file_storage.services.file_service import FileService
-from file_storage.storages.minio import minio_client
 
 logger = logging.getLogger(__name__)
 
 
 class UploadService:
-    def __init__(self, user: User, s3_client=minio_client):
+    def __init__(self, user: User, directory_service: DirectoryService):
         self.user = user
+        self.directory_service = directory_service
         self._directory_cache: dict[str, UserFile] = {}
-        self.s3_client = s3_client
 
     def upload_file(
             self, uploaded_file: UploadedFile, rel_path: str | None, parent_object: UserFile | None
@@ -88,8 +87,7 @@ class UploadService:
 
             if dir_path not in cache:
                 try:
-                    directory_service = DirectoryService(self.user, self.s3_client)
-                    parent_object = directory_service.get_parent_or_create_directories_from_path(
+                    parent_object = self.directory_service.get_parent_or_create_directories_from_path(
                         parent_object, directory_path_parts
                     )
 
