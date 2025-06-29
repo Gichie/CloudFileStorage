@@ -1,6 +1,7 @@
 from django.contrib.auth.models import User
 
 from file_storage.services.directory_service import DirectoryService
+from file_storage.services.file_service import FileService
 from file_storage.services.upload_service import UploadService
 from file_storage.storages.minio import minio_client
 
@@ -16,6 +17,7 @@ def create_upload_service(user: User) -> UploadService:
              экземпляр `UploadService`.
     """
     directory_service = DirectoryService(user, minio_client)
-    upload_service = UploadService(user, directory_service)
+    file_service = FileService(user, minio_client)
+    upload_service = UploadService(user, directory_service, file_service)
 
     return upload_service

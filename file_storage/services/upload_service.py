@@ -13,9 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 class UploadService:
-    def __init__(self, user: User, directory_service: DirectoryService):
+    def __init__(self, user: User, directory_service: DirectoryService, file_service: FileService):
         self.user = user
         self.directory_service = directory_service
+        self.file_service = file_service
         self._directory_cache: dict[str, UserFile] = {}
 
     def upload_file(
@@ -98,7 +99,7 @@ class UploadService:
             else:
                 parent_object = cache[dir_path]
 
-        FileService.create_file(self.user, uploaded_file, parent_object, log_prefix)
+        self.file_service.create_file(uploaded_file, parent_object, log_prefix)
         return dir_path, parent_object
 
 

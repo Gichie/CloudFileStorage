@@ -19,16 +19,15 @@ class FileService:
         self.user = user
         self.s3_client = s3_client
 
-    @staticmethod
-    def create_file(user, uploaded_file, parent_object, log_prefix=None):
-        if UserFile.objects.file_exists(user, parent_object, uploaded_file.name):
+    def create_file(self, uploaded_file, parent_object, log_prefix=None):
+        if UserFile.objects.file_exists(self.user, parent_object, uploaded_file.name):
             message = f"Upload failed. File or directory with this name already exists. {log_prefix}"
             logger.error(message, exc_info=True)
             raise NameConflictError('Такой файл уже существует', uploaded_file.name, parent_object.name)
 
         try:
             user_file_instance = UserFile(
-                user=user,
+                user=self.user,
                 file=uploaded_file,
                 name=uploaded_file.name,
                 parent=parent_object,
