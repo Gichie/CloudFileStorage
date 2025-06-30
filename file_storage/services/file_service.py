@@ -9,9 +9,9 @@ from django.db import transaction
 
 from cloud_file_storage import settings
 from cloud_file_storage.settings import PRESIGNED_URL_LIFETIME_SECONDS
-from file_storage.exceptions import NameConflictError, InvalidPathError, DatabaseError, StorageError
-from file_storage.models import UserFile, FileType
-from file_storage.storages.minio import minio_client, MinioClient
+from file_storage.exceptions import DatabaseError, InvalidPathError, NameConflictError, StorageError
+from file_storage.models import FileType, UserFile
+from file_storage.storages.minio import MinioClient, minio_client
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class FileService:
 
         except SuspiciousFileOperation as e:
             logger.warning(f"Loading error: path too long {log_prefix}: {e}", exc_info=True)
-            raise InvalidPathError()
+            raise InvalidPathError() from e
 
     def generate_download_url(self, file_id: UUID) -> str:
         """Генерирует URL для загрузки одного файла.
@@ -93,13 +93,15 @@ class FileService:
         """
         try:
             user_file = UserFile.objects.get(id=file_id, user=self.user, object_type=FileType.FILE)
-        except UserFile.DoesNotExist:
+        except UserFile.DoesNotExist as e:
             logger.warning(
                 f"Попытка доступа к несуществующему или чужому файлу: id={file_id}, "
                 f"user={self.user}",
                 exc_info=True
             )
-            raise DatabaseError("Запрошенный файл не найден или у вас нет прав на его скачивание.")
+            raise DatabaseError(
+                "Запрошенный файл не найден или у вас нет прав на его скачивание."
+            ) from e
 
         s3_key: str = user_file.file.name
 
@@ -123,7 +125,7 @@ class FileService:
         except ParamValidationError as e:
             logger.error(f"{e}", exc_info=True)
             raise StorageError(f"Произошла ошибка при формировании ссылки "
-                               f"на скачивание файла '{user_file.name}'")
+                               f"на скачивание файла '{user_file.name}'") from e
 
         logger.info(
             f"File downloaded successfully. s3_key: {s3_key}, presigned_url: {presigned_url}")

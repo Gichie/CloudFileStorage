@@ -1,6 +1,6 @@
 import io
 import logging
-from typing import Iterable
+from collections.abc import Iterable
 
 import boto3
 from botocore.client import BaseClient
@@ -105,7 +105,7 @@ class MinioClient:
             paginator = self.s3_client.get_paginator('list_objects_v2')
             pages = paginator.paginate(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Prefix=prefix)
         except Exception as e:
-            raise StorageError(f"{e}")
+            raise StorageError(f"{e}") from e
 
         for page in pages:
             for obj in page.get('Contents', []):
@@ -128,7 +128,7 @@ class MinioClient:
         except Exception as e:
             logger.error(f"Error while deleting the file to the repository from {key}'. {e}",
                          exc_info=True)
-            raise StorageError
+            raise StorageError from e
 
     def delete_objects_by_prefix(self, prefix: str) -> None:
         """
@@ -184,7 +184,7 @@ class MinioClient:
             logger.error(
                 f"Error while copying the file to the repository from '{old_key}' to '{new_key}'. {e}",
                 exc_info=True)
-            raise StorageError
+            raise StorageError from e
 
         self.delete_file(old_key)
 

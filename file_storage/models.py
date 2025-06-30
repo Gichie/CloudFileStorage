@@ -1,7 +1,7 @@
 import datetime
 import urllib
 import uuid
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from django.conf import settings
 from django.db import models
@@ -149,6 +149,27 @@ class UserFile(models.Model):
             return f"{self.name}"
         return str(self.name or "Без названия")
 
+    def save(self, *args, **kwargs) -> None:
+        """Переопределенный метод сохранения модели.
+
+        Устанавливает полный путь (`path`) объекта перед сохранением.
+        Если объект является файлом и имеет связанный файл (`self.file`),
+        обновляет `file_size` и `content_type`.
+
+        :param args: Позиционные аргументы для родительского метода `save`.
+        :param kwargs: Именованные аргументы для родительского метода `save`.
+        """
+        self.path = self.get_full_path()
+
+        if self.file and not self.is_directory():
+            if not self.file_size:
+                self.file_size = self.file.size
+            self.file.name = self.path
+            if not self.content_type:
+                self.content_type = self.file.file.content_type
+
+        super().save(*args, **kwargs)
+
     def is_directory(self) -> bool:
         """Проверяет, является ли данный объект директорией.
 
@@ -182,27 +203,6 @@ class UserFile(models.Model):
         """
         path = '/'.join(self.path.split('/')[1:])
         return path
-
-    def save(self, *args, **kwargs) -> None:
-        """Переопределенный метод сохранения модели.
-
-        Устанавливает полный путь (`path`) объекта перед сохранением.
-        Если объект является файлом и имеет связанный файл (`self.file`),
-        обновляет `file_size` и `content_type`.
-
-        :param args: Позиционные аргументы для родительского метода `save`.
-        :param kwargs: Именованные аргументы для родительского метода `save`.
-        """
-        self.path = self.get_full_path()
-
-        if self.file and not self.is_directory():
-            if not self.file_size:
-                self.file_size = self.file.size
-            self.file.name = self.path
-            if not self.content_type:
-                self.content_type = self.file.file.content_type
-
-        super().save(*args, **kwargs)
 
     def get_s3_key_for_directory_marker(self) -> str | None:
         """Возвращает ключ S3 для объекта-маркера, если текущий объект - директория.

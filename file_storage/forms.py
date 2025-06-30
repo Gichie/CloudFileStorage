@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from django.core.files.uploadedfile import UploadedFile
 
 from cloud_file_storage.settings import DATA_UPLOAD_MAX_MEMORY_SIZE
-from file_storage.models import UserFile, FileType
+from file_storage.models import FileType, UserFile
 
 INVALID_CHARS_PATTERN = re.compile(r'[\/\\<>:"|?*]')
 

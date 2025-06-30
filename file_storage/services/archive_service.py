@@ -1,9 +1,9 @@
 import logging
-from typing import Iterator
+from collections.abc import Iterator
 
 from botocore.exceptions import ClientError
 from django.db.models import QuerySet
-from zipstream import ZipStream, ZIP_DEFLATED
+from zipstream import ZIP_DEFLATED, ZipStream
 
 from cloud_file_storage import settings
 from file_storage.exceptions import StorageError
@@ -75,8 +75,7 @@ class ZipStreamGenerator:
 
         self.file_size = response.get('ContentLength', None)
 
-        for chunk in iter(lambda: response['Body'].read(READ_CHUNK_SIZE), b''):
-            yield chunk
+        yield from iter(lambda: response['Body'].read(READ_CHUNK_SIZE), b'')
 
     def generate(self) -> Iterator[bytes]:
         """Генерирует ZIP-архив по частям."""
@@ -100,8 +99,7 @@ class ZipStreamGenerator:
                     size=self.file_size,
                 )
 
-        for chunk in zs:
-            yield chunk
+        yield from zs
 
         logger.info(
             f"User '{self.directory.user}' finished downloading directory '{self.directory.name}'.")

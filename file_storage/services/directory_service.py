@@ -1,18 +1,18 @@
 """Сервис для операций, связанных с директориями."""
 import logging
-from typing import Iterator
+from collections.abc import Iterator
 from uuid import UUID
 
-from botocore.exceptions import NoCredentialsError, ClientError, BotoCoreError
+from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 from django.contrib.auth.models import User
-from django.db import IntegrityError, transaction, router
+from django.db import IntegrityError, router, transaction
 from django.db.models import Value
 from django.db.models.functions import Replace
 from django.http import Http404
 
 from cloud_file_storage import settings
-from file_storage.exceptions import StorageError, NameConflictError, DatabaseError
-from file_storage.models import UserFile, FileType
+from file_storage.exceptions import DatabaseError, NameConflictError, StorageError
+from file_storage.models import FileType, UserFile
 from file_storage.services.archive_service import ZipStreamGenerator
 from file_storage.storages.minio import minio_client
 
@@ -79,23 +79,23 @@ class DirectoryService:
 
         except IntegrityError as e:
             logger.error(f"Database integrity error during folder creation: {e}", exc_info=True)
-            raise DatabaseError()
+            raise DatabaseError() from e
 
         except NoCredentialsError as e:
             logger.critical(f"S3/Minio credentials not found. Cannot create directory marker. {e}",
                             exc_info=True)
-            raise StorageError()
+            raise StorageError() from e
 
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code")
             logger.error(
                 f"S3 ClientError while creating directory marker: {e} (Code: {error_code})",
                 exc_info=True)
-            raise StorageError()
+            raise StorageError() from e
 
         except BotoCoreError as e:
             logger.error(f"BotoCoreError while creating directory marker '{key}': {e}", exc_info=True)
-            raise StorageError()
+            raise StorageError() from e
 
     @staticmethod
     def _update_children_paths(directory: UserFile, old_path: str, new_path: str) -> None:
@@ -300,21 +300,25 @@ class DirectoryService:
                             object_type=FileType.DIRECTORY,
                         )
 
-                    except UserFile.DoesNotExist:
+                    except UserFile.DoesNotExist as e:
                         logger.warning(
                             f"User '{self.user.username}': "
                             f"Directory not found for path component '{name_part}' "
                             f"Full requested path: '{unencoded_path}'. Raising Http404."
                         )
-                        raise Http404("Запрошенная директория не найдена или не является директорией.")
-                    except UserFile.MultipleObjectsReturned:
+                        raise Http404(
+                            "Запрошенная директория не найдена или не является директорией."
+                        ) from e
+                    except UserFile.MultipleObjectsReturned as e:
                         logger.error(
                             f"User '{self.user.username}': "
                             f"Multiple objects returned for path component '{name_part}' "
                             f"Full requested path: '{unencoded_path}'. "
                             f"This indicates a data integrity issue. Raising Http404."
                         )
-                        raise Http404("Ошибка при поиске директории (найдено несколько объектов).")
+                        raise Http404(
+                            "Ошибка при поиске директории (найдено несколько объектов)."
+                        ) from e
 
         return current_directory
 
@@ -393,7 +397,7 @@ class DirectoryService:
             directory: UserFile = UserFile.objects.get(
                 id=directory_id, user=self.user, object_type=FileType.DIRECTORY
             )
-        except UserFile.DoesNotExist:
+        except UserFile.DoesNotExist as e:
             logger.warning(
                 f"Попытка доступа к несуществующей или чужой папке: id={directory_id}, "
                 f"user={self.user}",
@@ -401,7 +405,7 @@ class DirectoryService:
             )
             raise DatabaseError(
                 "Запрошенная папка не найдена или у вас нет прав на её скачивание."
-            )
+            ) from e
 
         all_files = UserFile.objects.get_all_children_files(directory)
 

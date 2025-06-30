@@ -1,7 +1,8 @@
 import logging
 import urllib
+from collections.abc import Callable
 from functools import wraps
-from typing import Type, Any, Callable
+from typing import Any
 from uuid import UUID
 
 from django.contrib import messages
@@ -11,15 +12,15 @@ from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import UploadedFile
 from django.db import IntegrityError
 from django.db.models import QuerySet
-from django.http import JsonResponse, HttpResponseRedirect, StreamingHttpResponse, Http404, HttpRequest
+from django.http import Http404, HttpRequest, HttpResponseRedirect, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views import View
 from django.views.generic import ListView
 
 from cloud_file_storage import settings
-from file_storage.exceptions import (StorageError, NameConflictError, DatabaseError, InvalidPathError)
-from file_storage.forms import FileUploadForm, DirectoryCreationForm, RenameItemForm
-from file_storage.mixins import QueryParamMixin, DirectoryServiceMixin, FileServiceMixin
+from file_storage.exceptions import DatabaseError, InvalidPathError, NameConflictError, StorageError
+from file_storage.forms import DirectoryCreationForm, FileUploadForm, RenameItemForm
+from file_storage.mixins import DirectoryServiceMixin, FileServiceMixin, QueryParamMixin
 from file_storage.models import UserFile
 from file_storage.services.factories import create_upload_service
 from file_storage.utils import ui
@@ -76,7 +77,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, DirectoryServiceMixin, L
     Позволяет навигацию по директориям. Поддерживает пагинацию.
     """
 
-    model: Type[UserFile] = UserFile
+    model: type[UserFile] = UserFile
     template_name: str = FILE_LIST_TEMPLATE
     context_object_name = 'items'
     paginate_by = 20
@@ -287,7 +288,7 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
 
         upload_service = create_upload_service(user)
 
-        for uploaded_file, rel_path in zip(files, relative_paths):
+        for uploaded_file, rel_path in zip(files, relative_paths, strict=False):
             form_data: dict[str, Any] = {'parent': parent_object.pk if parent_object else None}
             form_files: dict[str, UploadedFile] = {'file': uploaded_file}
             form = FileUploadForm(form_data, form_files, user=user)

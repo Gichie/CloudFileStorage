@@ -1,15 +1,14 @@
+import time
 from importlib import import_module
 
-import time
-
-from django.contrib.auth import get_user_model, SESSION_KEY, BACKEND_SESSION_KEY, HASH_SESSION_KEY
-
+import pytest
+from django.conf import settings
+from django.contrib.auth import BACKEND_SESSION_KEY, HASH_SESSION_KEY, SESSION_KEY, get_user_model
 from django.test import override_settings
 from django.urls import reverse
 from freezegun import freeze_time
 from test_plus.plugin import TestCase
-import pytest
-from django.conf import settings
+
 from users.forms import LoginUserForm
 
 User = get_user_model()
@@ -59,7 +58,8 @@ class TestLogin(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'users/login.html')
-        expected_error = 'Пожалуйста, введите правильные имя пользователя и пароль. Оба поля могут быть чувствительны к регистру.'
+        expected_error = ('Пожалуйста, введите правильные имя пользователя и пароль. '
+                          'Оба поля могут быть чувствительны к регистру.')
         self.assertContains(response, expected_error)
         self.assertTrue(response.context['form'].non_field_errors())
         self.assertEqual(response.context['form'].non_field_errors()[0], expected_error)
@@ -75,7 +75,8 @@ class TestLogin(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'users/login.html')
-        expected_error = 'Пожалуйста, введите правильные имя пользователя и пароль. Оба поля могут быть чувствительны к регистру.'
+        expected_error = ('Пожалуйста, введите правильные имя пользователя и пароль. '
+                          'Оба поля могут быть чувствительны к регистру.')
         self.assertContains(response, expected_error)
         self.assertTrue(response.context['form'].non_field_errors())
         self.assertEqual(response.context['form'].non_field_errors()[0], expected_error)

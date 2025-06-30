@@ -1,5 +1,5 @@
 import pytest
-from django.contrib.auth import get_user_model, SESSION_KEY
+from django.contrib.auth import SESSION_KEY, get_user_model
 from django.urls import reverse
 from test_plus.test import TestCase
 

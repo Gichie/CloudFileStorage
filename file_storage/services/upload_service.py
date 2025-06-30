@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 
-from file_storage.exceptions import StorageError, InvalidPathError
+from file_storage.exceptions import InvalidPathError, StorageError
 from file_storage.models import UserFile
 from file_storage.services.directory_service import DirectoryService
 from file_storage.services.file_service import FileService

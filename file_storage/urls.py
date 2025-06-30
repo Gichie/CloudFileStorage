@@ -1,8 +1,16 @@
 from django.urls import path
 
-from file_storage.views import FileListView, DeleteView, RenameView, \
-    FileUploadAjaxView, DownloadFileView, DownloadDirectoryView, FileSearchView, MoveStorageItemView, \
-    DestinationFolderAjaxView
+from file_storage.views import (
+    DeleteView,
+    DestinationFolderAjaxView,
+    DownloadDirectoryView,
+    DownloadFileView,
+    FileListView,
+    FileSearchView,
+    FileUploadAjaxView,
+    MoveStorageItemView,
+    RenameView,
+)
 
 app_name = 'file_storage'
 

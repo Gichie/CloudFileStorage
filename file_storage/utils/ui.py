@@ -1,6 +1,5 @@
 """Набор утилит для генерации элементов пользовательского интерфейса."""
 import urllib
-from typing import Optional
 
 from django.urls import reverse
 
@@ -30,7 +29,7 @@ def generate_breadcrumbs(path_unencoded: str) -> list[dict[str, str]]:
     return breadcrumbs
 
 
-def get_parent_url(full_path: str, view_name: str) -> Optional[str]:
+def get_parent_url(full_path: str, view_name: str) -> str | None:
     """
     Формирует URL для кнопки "Назад".
 

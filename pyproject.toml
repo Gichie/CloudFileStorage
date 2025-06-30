@@ -1,0 +1,47 @@
+[tool.ruff]
+target-version = "py313"
+line-length = 104
+
+# Исключи файлы и папки из проверки.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+    "migrations",
+    '__pycache__',
+    'docs/source/conf.py',
+    'old',
+]
+
+[tool.ruff.lint]
+
+# Набор правил для активации.
+# E, F: стандартные правила flake8 (pycodestyle, pyflakes)
+# I: правила isort (сортировка импортов)
+# UP: правила pyupgrade (модернизация синтаксиса)
+# B: правила flake8-bugbear (поиск вероятных багов)
+# DJ: правила flake8-django (специфичные для Django)
+select = ["E", "F", "I", "UP", "B", "DJ"]
+
+# Можно игнорировать конкретные правила.
+# Например, DJ001 часто мешает, если вы используете CharField без max_length в моделях форм
+# ignore = ["DJ001"]
+
+[tool.ruff.format]
+quote-style = "double"
