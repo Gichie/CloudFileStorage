@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 FILE_STORAGE_LIST_FILES_URL: str = 'file_storage:list_files'
 FILE_LIST_TEMPLATE: str = 'file_storage/list_files.html'
+SEARCH_TEMPLATE: str = 'file_storage/search_results.html'
 
 
 def handle_service_exceptions(
@@ -74,6 +75,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, DirectoryServiceMixin, L
     Метод post создает новую папку.
     Позволяет навигацию по директориям. Поддерживает пагинацию.
     """
+
     model: Type[UserFile] = UserFile
     template_name: str = FILE_LIST_TEMPLATE
     context_object_name = 'items'
@@ -344,7 +346,7 @@ class FileSearchView(QueryParamMixin, LoginRequiredMixin, ListView):
     Используется Пагинация.
     """
 
-    template_name = 'file_storage/search_results.html'
+    template_name = SEARCH_TEMPLATE
     paginate_by = 25
     context_object_name = 'search_results'
     query: str | None = None
@@ -453,7 +455,6 @@ class DownloadDirectoryView(LoginRequiredMixin, DirectoryServiceMixin, View):
         unencoded_path: str = request.GET.get("path_param", "")
         redirect_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
 
-        user: User = request.user
         try:
             zip_generator, zip_filename = self.service.download(directory_id)
 

@@ -32,7 +32,7 @@ def generate_breadcrumbs(path_unencoded: str) -> list[dict[str, str]]:
 
 def get_parent_url(full_path: str, view_name: str) -> Optional[str]:
     """
-    Формирует URL для кнопки "Назад"
+    Формирует URL для кнопки "Назад".
 
     :param full_path: Текущий полный путь (не кодированный).
     :param view_name: Имя URL-шаблона для генерации ссылки.

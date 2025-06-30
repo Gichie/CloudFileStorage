@@ -4,6 +4,8 @@ from uuid import UUID
 from botocore.exceptions import ParamValidationError
 from django.contrib.auth.models import User
 from django.core.exceptions import SuspiciousFileOperation
+from django.core.files.uploadedfile import UploadedFile
+from django.db import transaction
 
 from cloud_file_storage import settings
 from cloud_file_storage.settings import PRESIGNED_URL_LIFETIME_SECONDS
@@ -15,30 +17,63 @@ logger = logging.getLogger(__name__)
 
 
 class FileService:
+    """
+    Сервис для управления файлами пользователя в S3-совместимом хранилище.
+
+    Предоставляет бизнес-логику для операций с файлами, инкапсулируя
+    взаимодействие с моделью UserFile и S3-клиентом.
+    """
+
     def __init__(self, user: User, s3_client: MinioClient = minio_client):
+        """
+        Инициализирует сервис для конкретного пользователя.
+
+        :param user: Экземпляр пользователя Django, от имени которого выполняются операции.
+        :param s3_client: Клиент для работы с S3/Minio. Если не передан,
+                          будет использован клиент по умолчанию.
+        """
         self.user = user
         self.s3_client = s3_client
 
-    def create_file(self, uploaded_file, parent_object, log_prefix=None):
+    def create_file(
+            self, uploaded_file: UploadedFile, parent_object: UserFile | None, log_prefix: str
+    ) -> None:
+        """
+        Создает запись о файле в БД и загружает его в хранилище.
+
+        Проверяет, существует ли уже файл или папка с таким именем в данной
+        директории. Если нет, создает экземпляр модели UserFile, что инициирует
+        загрузку файла в Minio через настроенный storage backend Django.
+
+        :param uploaded_file: Загружаемый файл (экземпляр UploadedFile из Django).
+        :param parent_object: Родительский объект (директория), в который загружается файл.
+        :param log_prefix: Префикс для логов.
+        :raises NameConflictError: Если файл или папка с таким именем уже существует
+                                   в родительской директории.
+        :raises InvalidPathError: Если путь к файлу является некорректным
+                                  (например, слишком длинный), что вызывает SuspiciousFileOperation.
+        :return: None.
+        """
         if UserFile.objects.file_exists(self.user, parent_object, uploaded_file.name):
             message = f"Upload failed. File or directory with this name already exists. {log_prefix}"
             logger.error(message, exc_info=True)
             raise NameConflictError('Такой файл уже существует', uploaded_file.name, parent_object.name)
 
         try:
-            user_file_instance = UserFile(
-                user=self.user,
-                file=uploaded_file,
-                name=uploaded_file.name,
-                parent=parent_object,
-                object_type=FileType.FILE,
-            )
-            user_file_instance.save()
+            with transaction.atomic():
+                user_file_instance = UserFile(
+                    user=self.user,
+                    file=uploaded_file,
+                    name=uploaded_file.name,
+                    parent=parent_object,
+                    object_type=FileType.FILE,
+                )
+                user_file_instance.save()
 
-            logger.debug(
-                f"{user_file_instance.object_type} successfully uploaded and saved. {log_prefix}. "
-                f"UserFile ID: {user_file_instance.id}, Minio Path: {user_file_instance.file.name}"
-            )
+                logger.debug(
+                    f"{user_file_instance.object_type} successfully uploaded and saved. {log_prefix}. "
+                    f"UserFile ID: {user_file_instance.id}, Minio Path: {user_file_instance.file.name}"
+                )
 
         except SuspiciousFileOperation as e:
             logger.warning(f"Loading error: path too long {log_prefix}: {e}", exc_info=True)
@@ -64,7 +99,7 @@ class FileService:
                 f"user={self.user}",
                 exc_info=True
             )
-            raise DatabaseError(f"Запрошенный файл не найден или у вас нет прав на его скачивание.")
+            raise DatabaseError("Запрошенный файл не найден или у вас нет прав на его скачивание.")
 
         s3_key: str = user_file.file.name
 

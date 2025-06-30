@@ -12,7 +12,6 @@ from django.http import Http404
 
 from cloud_file_storage import settings
 from file_storage.exceptions import StorageError, NameConflictError, DatabaseError
-from file_storage.forms import RenameItemForm
 from file_storage.models import UserFile, FileType
 from file_storage.services.archive_service import ZipStreamGenerator
 from file_storage.storages.minio import minio_client
@@ -26,6 +25,7 @@ class DirectoryService:
     """Сервисный слой для операций с файлами и директориями."""
 
     def __init__(self, user: User, s3_client=minio_client):
+        """Инициализация DirectoryService."""
         self.user = user
         self.s3_client = s3_client
 

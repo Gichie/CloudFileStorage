@@ -46,10 +46,7 @@ class DirectoryServiceMixin:
 
     @cached_property
     def service(self) -> DirectoryService:
-        """
-        Возвращает экземпляр DirectoryService, инициализированный
-        для текущего аутентифицированного пользователя.
-        """
+        """Возвращает экземпляр DirectoryService, инициализированный для текущего пользователя."""
         return DirectoryService(user=self.request.user, s3_client=minio_client)
 
 
@@ -63,8 +60,5 @@ class FileServiceMixin:
 
     @cached_property
     def service(self) -> FileService:
-        """
-        Возвращает экземпляр FileService, инициализированный
-        для текущего аутентифицированного пользователя.
-        """
+        """Возвращает экземпляр FileService, инициализированный для текущего пользователя."""
         return FileService(user=self.request.user, s3_client=minio_client)

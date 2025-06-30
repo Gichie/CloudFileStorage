@@ -8,7 +8,7 @@ from botocore.exceptions import ClientError
 
 from cloud_file_storage import settings
 from file_storage.exceptions import StorageError
-from file_storage.models import FileType
+from file_storage.models import FileType, UserFile
 
 logger = logging.getLogger(__name__)
 
@@ -17,15 +17,25 @@ BUCKET_NAME = settings.AWS_STORAGE_BUCKET_NAME
 
 class MinioClient:
     """
-    Клиент для взаимодействия с S3-совместимым хранилищем (Minio).
+    Клиент-обертка для взаимодействия с S3-совместимым хранилищем (Minio).
+
+    Инкапсулирует логику работы с boto3, предоставляя упрощенные методы
+    для конкретных операций приложения.
+    Обрабатывает ошибки и ведет логирование.
     """
 
     def __init__(self) -> None:
+        """
+        Инициализирует клиент.
+
+        Принимает готовый экземпляр boto3 клиента, что позволяет
+        гибко управлять его конфигурацией и упрощает тестирование.
+        """
         self._s3_client: BaseClient | None = None
 
     @property
     def s3_client(self) -> BaseClient:
-        """Инициализация S3 клиента"""
+        """Инициализация S3 клиента."""
         if self._s3_client is None:
             self._s3_client = boto3.client(
                 's3',
@@ -50,7 +60,7 @@ class MinioClient:
             Body=io.BytesIO(b'')
         )
 
-    def check_files_exist(self, files: Iterable['UserFile']) -> bool:
+    def check_files_exist(self, files: Iterable[UserFile]) -> bool:
         """
         Проверяет существование файлов в S3 хранилище.
 
@@ -103,7 +113,14 @@ class MinioClient:
 
         return keys_in_folder
 
-    def delete_file(self, key):
+    def delete_file(self, key: str) -> None:
+        """
+        Удаляет объект (файл) из бакета в Minio.
+
+        :param key: Ключ объекта (полный путь к файлу в бакете).
+        :raises StorageError: В случае, если произошла ошибка при
+                              взаимодействии с API хранилища.
+        """
         try:
             self.s3_client.delete_object(Bucket=BUCKET_NAME, Key=key)
             logger.debug(f"Deleted old file '{key}'")
@@ -173,8 +190,7 @@ class MinioClient:
 
     def rename_directory(self, old_minio_prefix: str, new_minio_prefix: str) -> None:
         """
-        Переименовывает "папку" в S3/Minio путем копирования каждого объекта с новым
-        ключом и последующего удаления старого.
+        Переименовывает "папку" в S3/Minio путем копирования каждого объекта с новым ключом.
 
         Получает все объекты со старым префиксом, вычисляет для каждого новый ключ
         и выполняет операцию переименования файла (копирование + удаление).

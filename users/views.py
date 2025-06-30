@@ -7,12 +7,25 @@ from users.forms import LoginUserForm, RegistrationForm
 
 
 class LoginUser(LoginView):
+    """
+    Представление для аутентификации пользователей.
+
+    Использует стандартный LoginView с кастомной формой и шаблоном.
+    """
+
     form_class = LoginUserForm
     template_name = 'users/login.html'
     extra_context = {'title': 'Авторизация'}
 
 
 class RegistrationUser(SuccessMessageMixin, CreateView):
+    """
+    Представление для регистрации новых пользователей.
+
+    Использует CreateView для создания объекта пользователя и
+    SuccessMessageMixin для отображения флеш-сообщения после успеха.
+    """
+
     form_class = RegistrationForm
     template_name = 'users/registration.html'
     extra_context = {'title': 'Регистрация'}

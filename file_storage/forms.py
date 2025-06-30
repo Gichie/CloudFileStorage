@@ -16,10 +16,18 @@ class FileUploadForm(forms.ModelForm):
     """Форма для валидации и обработки загрузки одного файла.
 
     Динамически настраивает поле 'parent' для выбора только директорий,
-    принадлежащих текущему пользователю. Автоматически устанавливает имя
-    файла из метаданных загруженного файла.
+    принадлежащих текущему пользователю.
     """
+
     class Meta:
+        """Конфигурация формы, связывающая ее с моделью Django.
+
+        Внутренний класс ``Meta`` — это стандартный механизм в Django,
+        позволяющий предоставить метаданные для родительского класса,
+        в данном случае для :class:`forms.ModelForm`. Он сообщает форме,
+        с какой моделью работать и какие поля из этой модели использовать.
+        """
+
         model = UserFile
         fields = ['name', 'file', 'parent']
         widgets = {'parent': forms.Select(attrs={'class': 'form-control'}), }
@@ -74,6 +82,7 @@ class DirectoryCreationForm(forms.ModelForm):
     Поле `parent` автоматически заполняется на основе текущей директории
     пользователя и скрыто в форме.
     """
+
     parent = forms.ModelChoiceField(
         queryset=UserFile.objects,
         required=False,
@@ -81,6 +90,14 @@ class DirectoryCreationForm(forms.ModelForm):
     )
 
     class Meta:
+        """
+        Конфигурация для ``DirectoryCreationForm``.
+
+        Этот внутренний класс предоставляет метаданные для родительской ``ModelForm``.
+        Он связывает форму с моделью Django и позволяет настроить её поведение,
+        например, указать используемые поля и их виджеты.
+        """
+
         model = UserFile
         fields: list[str] = ['name', 'parent']
 
@@ -131,10 +148,16 @@ class DirectoryCreationForm(forms.ModelForm):
 
 
 class RenameItemForm(forms.ModelForm):
-    """
-    Форма для валидации нового имени файла или папки.
-    """
+    """Форма для валидации нового имени файла или папки."""
+
     class Meta:
+        """
+        Конфигурация для `RenameItemForm`.
+
+        Связывает форму с моделью `UserFile` и указывает,
+        что для редактирования доступно только поле ``name``.
+        """
+
         model = UserFile
         fields = ['name']
 

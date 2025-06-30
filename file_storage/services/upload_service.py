@@ -13,7 +13,25 @@ logger = logging.getLogger(__name__)
 
 
 class UploadService:
+    """
+    Предоставляет бизнес-логику для операций, связанных с загрузкой файлов.
+
+    Этот сервис инкапсулирует логику по созданию необходимых директорий
+    и непосредственному сохранению файла, координируя работу
+    DirectoryService и FileService. Является частью слоя сервисов (Service Layer).
+    """
+
     def __init__(self, user: User, directory_service: DirectoryService, file_service: FileService):
+        """
+        Инициализирует сервис.
+
+        Принимает пользователя, для которого выполняется операция.
+        Принимает другие сервисы, от которых зависит его работа (инъекция зависимостей).
+
+        :param user: Экземпляр пользователя Django, инициировавший загрузку.
+        :param directory_service: Сервис для работы с директориями.
+        :param file_service: Сервис для работы с файлами.
+        """
         self.user = user
         self.directory_service = directory_service
         self.file_service = file_service

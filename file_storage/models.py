@@ -11,20 +11,32 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
 
-def user_directory_path(instance, filename):
+def user_directory_path(instance: 'UserFile', filename) -> str:
+    """
+    Генерирует путь для загрузки файла в хранилище.
+
+    Путь формируется на основе полного иерархического пути объекта в базе данных,
+    что обеспечивает хранение файлов в Minio в структуре, идентичной
+    логической структуре папок пользователя.
+
+    :param instance: Экземпляр модели UserFile, к которому привязан файл.
+    :param filename: Исходное имя файла, которое было загружено.
+                     В данной реализации оно не используется, так как имя
+                     берется из поля `name` экземпляра.
+    :return: Строка, представляющая полный путь для сохранения файла в хранилище.
+    """
     return instance.get_full_path()
 
 
 class FileType(models.TextChoices):
     """Перечисление типов объектов в файловом хранилище."""
+
     FILE: str = 'file', 'Файл'
     DIRECTORY: str = 'directory', 'Папка'
 
 
 class UserFileManager(models.Manager):
-    """
-    Менеджер для модели UserFile, предоставляющий кастомные методы для работы с файлами и папками.
-    """
+    """Менеджер для модели UserFile, предоставляющий кастомные методы для работы с файлами и папками."""
 
     def get_all_children_files(self, directory: 'UserFile'):
         """
@@ -72,8 +84,7 @@ class UserFileManager(models.Manager):
 
     def object_with_name_exists(self, user: 'User', object_name: str,
                                 parent_object: Optional['UserFile'] = None) -> bool:
-        """Проверяет существование объекта (файла или папки) с указанным именем
-        в заданной родительской директории для конкретного пользователя.
+        """Проверяет существование объекта с указанным именем в заданной родительской директории.
 
         :param user: Пользователь, владелец объекта.
         :param object_name: Имя проверяемого объекта.
@@ -89,8 +100,7 @@ class UserFileManager(models.Manager):
 
     def file_exists(self, user: 'User', parent: Optional['UserFile'], name: str) -> bool:
         """
-        Проверяет существование файла или папки с указанным именем в родительской директории
-        для конкретного пользователя.
+        Проверяет существование файла или папки с указанным именем в родительской директории.
 
         :param user: Пользователь, владелец объекта.
         :param parent: Родительская папка. None для корневой директории.
@@ -106,6 +116,7 @@ class UserFileManager(models.Manager):
 
 class UserFile(models.Model):
     """Модель, представляющая файл или директорию пользователя."""
+
     id: uuid.UUID = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='files')
     file = models.FileField(upload_to=user_directory_path, null=True, blank=True, max_length=500)
@@ -121,11 +132,19 @@ class UserFile(models.Model):
     last_modified: datetime = models.DateTimeField(auto_now=True)
 
     class Meta:
+        """
+        Мета-опции для модели UserFile.
+
+        Определяет поведение модели на уровне базы данных, не затрагивая
+        ее поля напрямую.
+        """
+
         unique_together = ('user', 'name', 'parent')
 
     objects: UserFileManager = UserFileManager()
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """Строковое представление объекта (файла или папки)."""
         if self.parent:
             return f"{self.name}"
         return str(self.name or "Без названия")
@@ -200,7 +219,8 @@ class UserFile(models.Model):
             return f"{self.get_full_path()}.empty_folder_marker"
         return None
 
-    def get_path_for_url(self):
+    def get_path_for_url(self) -> str:
+        """Заменяет пробелы на +."""
         if not self.is_directory():
             return ""
         if self.path:
