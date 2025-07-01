@@ -1,8 +1,8 @@
 from typing import Any
 
 from django import forms
-from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.models import User
 
 
 class LoginUserForm(AuthenticationForm):
@@ -22,9 +22,6 @@ class LoginUserForm(AuthenticationForm):
         label='Пароль',
         widget=forms.PasswordInput(attrs={'class': 'form-control'})
     )
-
-
-User = get_user_model()
 
 
 class RegistrationForm(forms.ModelForm):
@@ -79,19 +76,19 @@ class RegistrationForm(forms.ModelForm):
                 raise forms.ValidationError('Такой E-mail уже существует')
         return email
 
-    def clean(self) -> dict[str, Any]:
+    def clean(self) -> dict[str, Any] | None:
         """
         Общая валидация формы.
 
         Проверяет, совпадают ли введенные пароли.
         """
         form_data = super().clean()
+        if form_data:
+            password = form_data.get('password')
+            password2 = form_data.get('password2')
 
-        password = form_data.get('password')
-        password2 = form_data.get('password2')
-
-        if password and password2 and password != password2:
-            raise forms.ValidationError('Пароли не совпадают')
+            if password and password2 and password != password2:
+                raise forms.ValidationError('Пароли не совпадают')
 
         return form_data
 

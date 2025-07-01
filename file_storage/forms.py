@@ -1,10 +1,11 @@
 import os
 import re
-from typing import Any
+from typing import Any, cast
 
 from django import forms
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import UploadedFile
+from django.forms import ModelChoiceField
 
 from cloud_file_storage.settings import DATA_UPLOAD_MAX_MEMORY_SIZE
 from file_storage.models import FileType, UserFile
@@ -37,7 +38,7 @@ class FileUploadForm(forms.ModelForm):
 
         :param user: Опциональный объект пользователя для фильтрации queryset поля 'parent'.
         """
-        user: User | None = kwargs.pop('user', None)
+        user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
 
         self.fields['name'].widget = forms.HiddenInput()
@@ -60,7 +61,7 @@ class FileUploadForm(forms.ModelForm):
                                        максимально допустимый размер.
         :return: Валидированный объект файла.
         """
-        file: UploadedFile | None = self.cleaned_data.get('file')
+        file = self.cleaned_data.get('file')
         if file:
             if not self.cleaned_data.get('name'):
                 self.cleaned_data['name'] = os.path.basename(file.name)
@@ -107,7 +108,7 @@ class DirectoryCreationForm(forms.ModelForm):
             }),
         }
 
-    def __init__(self, user: User, *args: Any, **kwargs: dict[str, Any]) -> None:
+    def __init__(self, user: User, *args: Any, **kwargs: Any) -> None:
         """
         Инициализирует форму, устанавливая пользователя и фильтруя queryset для поля `parent`.
 
@@ -121,7 +122,9 @@ class DirectoryCreationForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         if self.user:
-            self.fields['parent'].queryset = UserFile.objects.filter(
+            parent_field = self.fields['parent']
+            parent_field = cast(ModelChoiceField, parent_field)
+            parent_field.queryset = UserFile.objects.filter(
                 user=self.user, object_type=FileType.DIRECTORY
             )
             self.fields['name'].required = True

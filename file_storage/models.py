@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
 
-def user_directory_path(instance: 'UserFile', filename) -> str:
+def user_directory_path(instance: 'UserFile', filename: str) -> str:
     """
     Генерирует путь для загрузки файла в хранилище.
 
@@ -31,11 +31,11 @@ def user_directory_path(instance: 'UserFile', filename) -> str:
 class FileType(models.TextChoices):
     """Перечисление типов объектов в файловом хранилище."""
 
-    FILE: str = 'file', 'Файл'
-    DIRECTORY: str = 'directory', 'Папка'
+    FILE = 'file', 'Файл'
+    DIRECTORY = 'directory', 'Папка'
 
 
-class UserFileManager(models.Manager):
+class UserFileManager(models.Manager['UserFile']):
     """Менеджер для модели UserFile, предоставляющий кастомные методы для работы с файлами и папками."""
 
     def get_all_children_files(self, directory: 'UserFile'):
@@ -75,7 +75,7 @@ class UserFileManager(models.Manager):
         :return: QuerySet объектов UserFile, представляющих доступные директории.
         """
         item = self.get(user=user, id=item_id)
-        res = self.filter(user=user, object_type=FileType.DIRECTORY).exclude(id=item.parent_id)
+        res = self.filter(user=user, object_type=FileType.DIRECTORY).exclude(id=item.parent_id)  # type: ignore[misc]
 
         if item.object_type == FileType.DIRECTORY:
             res = res.exclude(path__startswith=item.path)
@@ -98,7 +98,7 @@ class UserFileManager(models.Manager):
             parent=parent_object,
         ).exists()
 
-    def file_exists(self, user: 'User', parent: Optional['UserFile'], name: str) -> bool:
+    def file_exists(self, user: 'User', parent: Optional['UserFile'], name: str | None) -> bool:
         """
         Проверяет существование файла или папки с указанным именем в родительской директории.
 
@@ -117,19 +117,19 @@ class UserFileManager(models.Manager):
 class UserFile(models.Model):
     """Модель, представляющая файл или директорию пользователя."""
 
-    id: uuid.UUID = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='files')
     file = models.FileField(upload_to=user_directory_path, null=True, blank=True, max_length=500)
-    path: str = models.CharField(unique=True, max_length=500, null=True, blank=True)
-    name: str = models.CharField(max_length=255)
-    parent: Optional['UserFile'] = models.ForeignKey(
+    path = models.CharField(unique=True, max_length=500, blank=True)
+    name = models.CharField(max_length=255)
+    parent = models.ForeignKey(
         'self', null=True, blank=True, on_delete=models.CASCADE, related_name='children', db_index=True
     )
-    object_type: str = models.CharField(max_length=10, choices=FileType.choices, default=FileType.FILE)
-    file_size: int | None = models.PositiveBigIntegerField(null=True, blank=True)
-    content_type: str | None = models.CharField(max_length=100, null=True, blank=True)
-    created_at: datetime = models.DateTimeField(auto_now_add=True)
-    last_modified: datetime = models.DateTimeField(auto_now=True)
+    object_type = models.CharField(max_length=10, choices=FileType.choices, default=FileType.FILE)
+    file_size = models.PositiveBigIntegerField(null=True, blank=True)
+    content_type = models.CharField(max_length=100, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_modified = models.DateTimeField(auto_now=True)
 
     class Meta:
         """
@@ -219,9 +219,10 @@ class UserFile(models.Model):
             return f"{self.get_full_path()}.empty_folder_marker"
         return None
 
-    def get_path_for_url(self) -> str:
+    def get_path_for_url(self) -> str | None:
         """Заменяет пробелы на +."""
         if not self.is_directory():
             return ""
         if self.path:
             return urllib.parse.quote_plus(self.get_display_path[:-1])
+        return None

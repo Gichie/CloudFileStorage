@@ -1,19 +1,24 @@
 from typing import Any
 
+from django.contrib.auth.models import User, AnonymousUser
+from django.http.request import HttpRequest
 from django.utils.functional import cached_property
+from django.views.generic.base import ContextMixin
 
 from file_storage.services.directory_service import DirectoryService
 from file_storage.services.file_service import FileService
 from file_storage.storages.minio import minio_client
 
 
-class QueryParamMixin:
+class QueryParamMixin(ContextMixin):
     """
     Миксин для добавления закодированных GET-параметров в контекст шаблона.
 
     Используется для сохранения параметров запроса при переходе по страницам пагинации.
     Исключает параметр 'page' из сохраняемых параметров.
     """
+
+    request: HttpRequest
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         """
@@ -27,7 +32,7 @@ class QueryParamMixin:
         """
         context = super().get_context_data(**kwargs)
 
-        query_params: dict[str, Any] = self.request.GET.copy()
+        query_params = self.request.GET.copy()
         query_params.pop('page', None)
         encode_params: str = query_params.urlencode()
 
@@ -44,9 +49,12 @@ class DirectoryServiceMixin:
     Доступен в view через `self.service`.
     """
 
+    request: HttpRequest
+
     @cached_property
     def service(self) -> DirectoryService:
         """Возвращает экземпляр DirectoryService, инициализированный для текущего пользователя."""
+        assert not isinstance(self.request.user, AnonymousUser), "Authentication required"
         return DirectoryService(user=self.request.user, s3_client=minio_client)
 
 
@@ -58,7 +66,10 @@ class FileServiceMixin:
     Доступен в view через `self.service`.
     """
 
+    request: HttpRequest
+
     @cached_property
     def service(self) -> FileService:
         """Возвращает экземпляр FileService, инициализированный для текущего пользователя."""
+        assert not isinstance(self.request.user, AnonymousUser), "Authentication required"
         return FileService(user=self.request.user, s3_client=minio_client)

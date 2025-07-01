@@ -34,8 +34,8 @@ SEARCH_TEMPLATE: str = 'file_storage/search_results.html'
 
 
 def handle_service_exceptions(
-        view_func: Callable[[HttpRequest, ...], Any]
-) -> Callable[[HttpRequest, ...], Any]:
+        view_func: Callable[..., Any]
+) -> Callable[..., Any]:
     """Декоратор для обработки общих исключений, возникающих в view-функциях.
 
     Ловит ``UserFile.DoesNotExist``, ``ValueError``, ``TypeError`` и любые другие ``Exception``,
@@ -77,6 +77,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, DirectoryServiceMixin, L
     Позволяет навигацию по директориям. Поддерживает пагинацию.
     """
 
+    user: User
     model: type[UserFile] = UserFile
     template_name: str = FILE_LIST_TEMPLATE
     context_object_name = 'items'
@@ -94,7 +95,10 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, DirectoryServiceMixin, L
         :param kwargs: Именованные аргументы.
         """
         super().setup(request, *args, **kwargs)
-        self.user: User = request.user
+
+        assert request.user.is_authenticated
+
+        self.user = request.user
         self.current_path_unencoded: str = request.GET.get('path', '')
         self.current_directory: UserFile | None = self.service.get_current_directory_from_path(
             self.current_path_unencoded
@@ -135,6 +139,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, DirectoryServiceMixin, L
         :param kwargs: Дополнительные аргументы контекста.
         :return: Словарь данных контекста.
         """
+
         context: dict = super().get_context_data(**kwargs)
 
         context['current_directory'] = self.current_directory
@@ -166,7 +171,7 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, DirectoryServiceMixin, L
         :param kwargs: Дополнительные именованные аргументы.
         :return: JSON-ответ со статусом операции.
         """
-        form = DirectoryCreationForm(request.user, request.POST)
+        form = DirectoryCreationForm(self.user, request.POST)
 
         if not form.is_valid():
             logger.warning(
@@ -212,6 +217,8 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, DirectoryServiceMixin, L
 class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
     """View для обработки AJAX-запросов на загрузку файлов и папок."""
 
+    user: User
+
     @staticmethod
     def _handle_form_validation_error(form: FileUploadForm) -> str:
         """
@@ -222,12 +229,15 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
         """
         error_messages: list[str] = []
         for field, errors in form.errors.items():
-            error_messages.append(f"{field}: {'; '.join(errors)}")
-        error_string: str = "; ".join(error_messages)
-        return error_string
+            error_string = '; '.join(map(str, errors))
+            error_messages.append(f"{field}: {error_string}")
+
+        return "\n".join(error_messages)
 
     @staticmethod
-    def _get_message_and_status(results: list[dict[str, str]]) -> tuple[dict[str, str], int]:
+    def _get_message_and_status(
+            results: list[dict[str, str | None]]
+    ) -> tuple[dict[str, str | list[dict[str, str | None]]], int]:
         """
         Формирует общее сообщение и HTTP-статус на основе результатов обработки файлов.
 
@@ -263,9 +273,14 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
         :param request: Объект HttpRequest.
         :return: JsonResponse с результатами загрузки.
         """
-        relative_paths = request.POST.getlist('relative_paths')
+        if 'relative_paths' in request.POST:
+            relative_paths: list[str | None] = [p for p in request.POST.getlist('relative_paths')]
+        else:
+            relative_paths = [None]
         parent_id: str = request.POST.get('parent_id', '')
         files = request.FILES.getlist('files')
+
+        assert request.user.is_authenticated
         user: User = request.user
 
         if not files:
@@ -284,7 +299,7 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
 
         parent_object = self.service.get_parent_directory(parent_id)
 
-        results: list[dict[str, str]] = []
+        results: list[dict[str, str | None]] = []
 
         upload_service = create_upload_service(user)
 
@@ -427,7 +442,7 @@ class DownloadFileView(LoginRequiredMixin, FileServiceMixin, View):
             messages.warning(request, str(e))
 
         except StorageError as e:
-            messages.warning(request, e)
+            messages.warning(request, str(e))
 
         except Exception as e:
             logger.error(f"Unexpected error: {e}", exc_info=True)
@@ -460,11 +475,11 @@ class DownloadDirectoryView(LoginRequiredMixin, DirectoryServiceMixin, View):
             zip_generator, zip_filename = self.service.download(directory_id)
 
         except DatabaseError as e:
-            messages.warning(request, e)
+            messages.warning(request, str(e))
             return redirect(redirect_path)
 
         except StorageError as e:
-            messages.error(request, e)
+            messages.error(request, str(e))
             return redirect(redirect_path)
 
         except Exception as e:
@@ -498,8 +513,9 @@ class DeleteView(LoginRequiredMixin, DirectoryServiceMixin, View):
         :param kwargs: Дополнительные именованные аргументы.
         :return: Редирект на страницу, с которой был сделан запрос.
         """
-        user: User = request.user
+        assert request.user.is_authenticated
 
+        user: User = request.user
         unencoded_path: str = request.POST.get("unencoded_path", "")
         encoded_path: str = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
 
@@ -545,6 +561,8 @@ class RenameView(LoginRequiredMixin, DirectoryServiceMixin, View):
         :param kwargs: Именованные аргументы.
         :return: Объект HttpResponseRedirect (редирект).
         """
+        assert request.user.is_authenticated
+
         unencoded_path: str = request.POST.get("unencoded_path", "")
         item_id: str = request.POST.get('id', '')
         user: User = request.user
@@ -610,7 +628,7 @@ class RenameView(LoginRequiredMixin, DirectoryServiceMixin, View):
 
         else:
             messages.warning(
-                request, form.errors.get('name', ["Неизвестная ошибка валидации имени."])[0]
+                request, str(form.errors.get('name', ["Неизвестная ошибка валидации имени."])[0])
             )
 
         return redirect(encoded_path)
@@ -632,8 +650,8 @@ class MoveStorageItemView(LoginRequiredMixin, DirectoryServiceMixin, View):
         :raises: Неявно обрабатывает и логирует исключения,
                  возвращая пользователю сообщение об ошибке.
         """
-        item_id: str = request.POST.get('item_id_to_move')
-        unencoded_path: str = request.POST.get('unencoded_path')
+        item_id: str = request.POST.get('item_id_to_move', "")
+        unencoded_path: str = request.POST.get('unencoded_path', "")
         destination_folder_id: str = request.POST.get('destination_folder_id', '')
 
         encoded_path = encode_path_for_url(unencoded_path, FILE_STORAGE_LIST_FILES_URL)
@@ -659,7 +677,7 @@ class MoveStorageItemView(LoginRequiredMixin, DirectoryServiceMixin, View):
                                     "Не удалось получить ключи для удаления из хранилища")
         except NameConflictError as e:
             logger.warning(e, exc_info=True)
-            messages.warning(request, e)
+            messages.warning(request, str(e))
         except Exception as e:
             logger.error(
                 f"User: '{request.user}'. "
@@ -685,6 +703,8 @@ class DestinationFolderAjaxView(LoginRequiredMixin, View):
                  Успешный ответ: [{"id": 1, "display_name": "path/to/folder"}, ...]
                  Ответ с ошибкой: {"error": "сообщение"}
         """
+        assert request.user.is_authenticated
+
         item_id: str = request.GET.get('item_id', '')
         if not item_id:
             return JsonResponse(

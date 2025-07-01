@@ -54,10 +54,13 @@ class FileService:
                                   (например, слишком длинный), что вызывает SuspiciousFileOperation.
         :return: None.
         """
+        assert uploaded_file.name is not None, "Загружаемый файл должен иметь имя"
+
         if UserFile.objects.file_exists(self.user, parent_object, uploaded_file.name):
             message = f"Upload failed. File or directory with this name already exists. {log_prefix}"
             logger.error(message, exc_info=True)
-            raise NameConflictError('Такой файл уже существует', uploaded_file.name, parent_object.name)
+            parent_name = parent_object.name if parent_object else None
+            raise NameConflictError('Такой файл уже существует', uploaded_file.name, parent_name)
 
         try:
             with transaction.atomic():

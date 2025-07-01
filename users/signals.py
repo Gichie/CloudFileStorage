@@ -2,12 +2,12 @@ import logging
 from typing import Any
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.contrib.auth.signals import user_logged_in, user_login_failed
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.http import HttpRequest
 
-User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +33,7 @@ def get_client_ip(request: HttpRequest) -> str:
 def log_user_logged_in(sender, request: HttpRequest, user: User, **kwargs) -> None:
     """Логирует успешный вход пользователя."""
     ip = get_client_ip(request)
-    logger.info(f"Успешный вход: Пользователь '{user.username}' (ID: {user.pk}) вошел с IP: {ip}")
+    logger.info(f"Успешный вход: Пользователь '{user}' (ID: {user.id}) вошел с IP: {ip}")
 
 
 @receiver(user_login_failed)

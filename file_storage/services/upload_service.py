@@ -67,7 +67,7 @@ class UploadService:
             relative_path: str | None,
             cache: dict[str, UserFile],
             parent_object
-    ) -> tuple[str | None, UserFile | None]:
+    ) -> tuple[str | None, UserFile]:
         """
         Обрабатывает загрузку одного файла.
 
@@ -87,7 +87,7 @@ class UploadService:
                  ``parent_object``: Родительский объект UserFile для создаваемого файла,
                                        может быть None, если это корень.
         """
-        uploaded_file_name: str = uploaded_file.name
+        uploaded_file_name = uploaded_file.name
         dir_path: str | None = None
         log_prefix: str = (f"User '{self.user}' (ID: {self.user.id}), File '{uploaded_file_name}', "
                            f"Parent ID: {parent_object.id if parent_object else 'None'}, "

@@ -7,7 +7,7 @@ class DatabaseError(Exception):
 class NameConflictError(DatabaseError):
     """Исключение, возникающее при конфликте имен файлов или папок."""
 
-    def __init__(self, message, name, parent_name=None):
+    def __init__(self, message: str, name: str, parent_name: str | None = None):
         """
         Инициализация исключения.
 

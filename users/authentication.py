@@ -1,5 +1,8 @@
+from typing import Any
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend
+from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import User
 from django.http import HttpRequest
 
@@ -16,9 +19,8 @@ class EmailAuthBackend(BaseBackend):
 
     def authenticate(
             self,
-            request: HttpRequest, username: str | None = None,
-            password: str | None = None,
-            **kwargs
+            request: HttpRequest | None,
+            **kwargs: Any
     ) -> User | None:
         """
         Аутентифицирует пользователя по email и паролю.
@@ -29,8 +31,15 @@ class EmailAuthBackend(BaseBackend):
         :param kwargs: Дополнительные аргументы.
         :return: Объект пользователя в случае успеха, иначе None.
         """
+        username = kwargs.get('username')
+        password = kwargs.get('password')
+
+        if not isinstance(username, str) or not isinstance(password, str):
+            return None
+
         try:
             user = self.user_model.objects.get(email__iexact=username)
+
             if user.check_password(password):
                 return user
             return None

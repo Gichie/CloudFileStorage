@@ -23,7 +23,7 @@ class ZipStreamGenerator:
     хранилище (Minio), без необходимости загружать все содержимое архива в память.
     """
 
-    def __init__(self, root_directory: UserFile, all_files: QuerySet[UserFile] | None = None):
+    def __init__(self, root_directory: UserFile, all_files: QuerySet[UserFile]):
         """
         Инициализирует генератор ZIP-архива.
 
@@ -34,8 +34,8 @@ class ZipStreamGenerator:
                           подпапки, которые должны быть включены в архив.
         """
         self.directory = root_directory
-        self.all_files: QuerySet[UserFile] | None = all_files
-        self.file_size = None
+        self.all_files: QuerySet[UserFile] = all_files
+        self.file_size: int | None = None
 
     def _get_zip_path(self, file_obj: UserFile) -> str:
         """
@@ -66,7 +66,7 @@ class ZipStreamGenerator:
         :raises StorageError: Если возникает проблема при доступе.
         """
         try:
-            response: dict = minio_client.s3_client.get_object(
+            response = minio_client.s3_client.get_object(
                 Bucket=settings.AWS_STORAGE_BUCKET_NAME,
                 Key=s3_key,
             )

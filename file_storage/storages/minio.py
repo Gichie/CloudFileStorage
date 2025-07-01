@@ -5,6 +5,8 @@ from collections.abc import Iterable
 import boto3
 from botocore.client import BaseClient
 from botocore.exceptions import ClientError
+from mypy_boto3_s3 import S3Client
+from mypy_boto3_s3.type_defs import ObjectIdentifierTypeDef, DeleteTypeDef
 
 from cloud_file_storage import settings
 from file_storage.exceptions import StorageError
@@ -31,10 +33,10 @@ class MinioClient:
         Принимает готовый экземпляр boto3 клиента, что позволяет
         гибко управлять его конфигурацией и упрощает тестирование.
         """
-        self._s3_client: BaseClient | None = None
+        self._s3_client: S3Client | None = None
 
     @property
-    def s3_client(self) -> BaseClient:
+    def s3_client(self) -> S3Client:
         """Инициализация S3 клиента."""
         if self._s3_client is None:
             self._s3_client = boto3.client(
@@ -88,7 +90,7 @@ class MinioClient:
                     return False
         return True
 
-    def get_all_object_keys_in_folder(self, prefix: str) -> list[dict[str, str]]:
+    def get_all_object_keys_in_folder(self, prefix: str) -> list[ObjectIdentifierTypeDef]:
         """
         Получает ключи всех объектов в S3 по заданному префиксу.
 
@@ -99,7 +101,7 @@ class MinioClient:
         :return: Список словарей, каждый из которых содержит ключ 'Key'.
         :raises StorageError: При ошибке во время взаимодействия с S3.
         """
-        keys_in_folder = []
+        keys_in_folder: list[ObjectIdentifierTypeDef] = []
 
         try:
             paginator = self.s3_client.get_paginator('list_objects_v2')
@@ -108,7 +110,7 @@ class MinioClient:
             raise StorageError(f"{e}") from e
 
         for page in pages:
-            for obj in page.get('Contents', []):
+            for obj in page['Contents']:
                 keys_in_folder.append({"Key": obj['Key']})
 
         return keys_in_folder
@@ -140,7 +142,7 @@ class MinioClient:
         :param prefix: Префикс (путь к папке) для удаления объектов.
         :raises StorageError: При ошибке во время взаимодействия с S3.
         """
-        objects_to_delete: list[dict[str, str]] = self.get_all_object_keys_in_folder(prefix)
+        objects_to_delete = self.get_all_object_keys_in_folder(prefix)
         if not objects_to_delete:
             logger.info(f"Directory '{prefix}' empty or does not exists.")
             return
@@ -148,9 +150,9 @@ class MinioClient:
         chunk_size: int = 1000
         try:
             for i in range(0, len(objects_to_delete), chunk_size):
-                chunk: list[dict[str, str]] = objects_to_delete[i:i + chunk_size]
+                chunk: list[ObjectIdentifierTypeDef] = objects_to_delete[i:i + chunk_size]
 
-                delete_request: dict[str, list] = {'Objects': chunk}
+                delete_request: DeleteTypeDef = {'Objects': chunk}
 
                 self.s3_client.delete_objects(Bucket=BUCKET_NAME, Delete=delete_request)
                 logger.info(f"{len(chunk)} objects removed")
@@ -198,7 +200,7 @@ class MinioClient:
         :param old_minio_prefix: Старый префикс папки.
         :param new_minio_prefix: Новый префикс папки.
         """
-        objects_to_rename: list[dict[str, str]] = self.get_all_object_keys_in_folder(old_minio_prefix)
+        objects_to_rename: list[ObjectIdentifierTypeDef] = self.get_all_object_keys_in_folder(old_minio_prefix)
         for obj in objects_to_rename:
             old_key = obj.get("Key", '')
             if old_key.startswith(old_minio_prefix):

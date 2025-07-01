@@ -43,7 +43,7 @@ class DirectoryService:
         :raises DatabaseError: При ошибках целостности или других проблемах с БД.
         :raises StorageError: При ошибках взаимодействия с S3 (аутентификация, клиентские ошибки).
         """
-        parent_object = self.get_parent_directory(self.user, parent_pk)
+        parent_object = self.get_parent_directory(parent_pk)
 
         try:
             with transaction.atomic():
@@ -58,10 +58,10 @@ class DirectoryService:
                         f"Файл или папка с именем '{directory_name}' "
                         f"уже существует в текущей директории.",
                         directory_name,
-                        parent_object
+                        parent_object.name if parent_object else None
                     )
 
-                new_directory: UserFile | None = UserFile(
+                new_directory: UserFile = UserFile(
                     user=self.user,
                     name=directory_name,
                     object_type=FileType.DIRECTORY,
@@ -267,6 +267,7 @@ class DirectoryService:
             except Exception as e:
                 logger.error(f"Unexpected error. User: {self.user}. {e}")
                 raise
+        return None
 
     def get_current_directory_from_path(self, unencoded_path: str) -> UserFile | None:
         """
@@ -366,7 +367,7 @@ class DirectoryService:
                 f"Файл или папка с именем '{storage_item.name}' уже существует "
                 f"в папке '{destination_folder}'",
                 storage_item.name,
-                destination_folder,
+                destination_folder.name if destination_folder else None,
             )
 
         storage_item.parent = destination_folder
