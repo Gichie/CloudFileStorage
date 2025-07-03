@@ -96,8 +96,6 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, DirectoryServiceMixin, L
         """
         super().setup(request, *args, **kwargs)
 
-        assert request.user.is_authenticated
-
         self.user = request.user
         self.current_path_unencoded: str = request.GET.get('path', '')
         self.current_directory: UserFile | None = self.service.get_current_directory_from_path(
@@ -599,14 +597,6 @@ class RenameView(LoginRequiredMixin, DirectoryServiceMixin, View):
         if form.is_valid():
             try:
                 self.service.rename(object_instance)
-
-                logger.info(f"User '{user}' renamed {object_instance.object_type} "
-                            f"to '{form.cleaned_data['name']}'")
-                messages.success(
-                    request,
-                    f"{object_instance.get_object_type_display()} успешно переименован(а)"
-                )
-
             except IntegrityError as e:
                 logger.warning(
                     f"User: '{user}'. Error while renaming object. '{object_instance.object_type}' "
@@ -625,6 +615,13 @@ class RenameView(LoginRequiredMixin, DirectoryServiceMixin, View):
                 logger.warning(f"User: '{user}'. Error while renaming '{object_instance.object_type}'"
                                f"with ID {object_instance.id}.\n{e}", exc_info=True)
                 messages.error(request, "Произошла ошибка при переименовании")
+            else:
+                logger.info(f"User '{user}' renamed {object_instance.object_type} "
+                            f"to '{form.cleaned_data['name']}'")
+                messages.success(
+                    request,
+                    f"{object_instance.get_object_type_display()} успешно переименован(а)"
+                )
 
         else:
             messages.warning(

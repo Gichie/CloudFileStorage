@@ -3,7 +3,6 @@ import logging
 from collections.abc import Iterable
 
 import boto3
-from botocore.client import BaseClient
 from botocore.exceptions import ClientError
 from mypy_boto3_s3 import S3Client
 from mypy_boto3_s3.type_defs import ObjectIdentifierTypeDef, DeleteTypeDef
@@ -13,8 +12,6 @@ from file_storage.exceptions import StorageError
 from file_storage.models import FileType, UserFile
 
 logger = logging.getLogger(__name__)
-
-BUCKET_NAME = settings.AWS_STORAGE_BUCKET_NAME
 
 
 class MinioClient:
@@ -124,7 +121,7 @@ class MinioClient:
                               взаимодействии с API хранилища.
         """
         try:
-            self.s3_client.delete_object(Bucket=BUCKET_NAME, Key=key)
+            self.s3_client.delete_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=key)
             logger.debug(f"Deleted old file '{key}'")
 
         except Exception as e:
@@ -154,7 +151,7 @@ class MinioClient:
 
                 delete_request: DeleteTypeDef = {'Objects': chunk}
 
-                self.s3_client.delete_objects(Bucket=BUCKET_NAME, Delete=delete_request)
+                self.s3_client.delete_objects(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Delete=delete_request)
                 logger.info(f"{len(chunk)} objects removed")
         except ClientError as e:
             logger.error(f"Error while deleting objects by prefix: {prefix}. {e}", exc_info=True)
@@ -177,7 +174,7 @@ class MinioClient:
         try:
             self.s3_client.copy_object(
                 Bucket=settings.AWS_STORAGE_BUCKET_NAME,
-                CopySource={'Bucket': BUCKET_NAME, 'Key': old_key},
+                CopySource={'Bucket': settings.AWS_STORAGE_BUCKET_NAME, 'Key': old_key},
                 Key=new_key
             )
             logger.debug(f"Copied '{old_key}' to '{new_key}'")
@@ -200,7 +197,8 @@ class MinioClient:
         :param old_minio_prefix: Старый префикс папки.
         :param new_minio_prefix: Новый префикс папки.
         """
-        objects_to_rename: list[ObjectIdentifierTypeDef] = self.get_all_object_keys_in_folder(old_minio_prefix)
+        objects_to_rename: list[ObjectIdentifierTypeDef] = self.get_all_object_keys_in_folder(
+            old_minio_prefix)
         for obj in objects_to_rename:
             old_key = obj.get("Key", '')
             if old_key.startswith(old_minio_prefix):

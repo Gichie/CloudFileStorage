@@ -54,7 +54,6 @@ class DirectoryServiceMixin:
     @cached_property
     def service(self) -> DirectoryService:
         """Возвращает экземпляр DirectoryService, инициализированный для текущего пользователя."""
-        assert not isinstance(self.request.user, AnonymousUser), "Authentication required"
         return DirectoryService(user=self.request.user, s3_client=minio_client)
 
 

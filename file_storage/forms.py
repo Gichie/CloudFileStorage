@@ -4,7 +4,6 @@ from typing import Any, cast
 
 from django import forms
 from django.contrib.auth.models import User
-from django.core.files.uploadedfile import UploadedFile
 from django.forms import ModelChoiceField
 
 from cloud_file_storage.settings import DATA_UPLOAD_MAX_MEMORY_SIZE

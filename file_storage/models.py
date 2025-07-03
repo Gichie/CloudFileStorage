@@ -1,4 +1,3 @@
-import datetime
 import urllib
 import uuid
 from typing import TYPE_CHECKING, Optional
@@ -75,7 +74,8 @@ class UserFileManager(models.Manager['UserFile']):
         :return: QuerySet объектов UserFile, представляющих доступные директории.
         """
         item = self.get(user=user, id=item_id)
-        res = self.filter(user=user, object_type=FileType.DIRECTORY).exclude(id=item.parent_id)  # type: ignore[misc]
+        res = self.filter(user=user, object_type=FileType.DIRECTORY).exclude(
+            id=item.parent_id)  # type: ignore[misc]
 
         if item.object_type == FileType.DIRECTORY:
             res = res.exclude(path__startswith=item.path)

@@ -18,7 +18,6 @@ from file_storage.storages.minio import minio_client
 
 logger = logging.getLogger(__name__)
 
-BUCKET_NAME = settings.AWS_STORAGE_BUCKET_NAME
 
 
 class DirectoryService:
@@ -70,7 +69,7 @@ class DirectoryService:
                 new_directory.save()
 
                 key = new_directory.get_s3_key_for_directory_marker()
-                self.s3_client.create_empty_directory_marker(BUCKET_NAME, key)
+                self.s3_client.create_empty_directory_marker(settings.AWS_STORAGE_BUCKET_NAME, key)
 
                 logger.info(
                     f"User {self.user.username} Directory successfully created in DB and S3. "
@@ -200,7 +199,7 @@ class DirectoryService:
                 try:
                     # Создание "директории" в S3/Minio
                     key = directory_object.get_s3_key_for_directory_marker()
-                    self.s3_client.create_empty_directory_marker(BUCKET_NAME, key)
+                    self.s3_client.create_empty_directory_marker(settings.AWS_STORAGE_BUCKET_NAME, key)
                     logger.debug(
                         f"User '{self.user.username}': S3 marker created for directory '{key}'.")
                 except (NoCredentialsError, ClientError, BotoCoreError) as e:
