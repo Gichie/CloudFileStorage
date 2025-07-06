@@ -18,10 +18,7 @@ def postgres_container():
 
 @pytest.fixture(scope='session', autouse=True)
 def override_db_settings(postgres_container):
-    """
-    Переопределяет настройки базы данных Django для использования
-    базы данных из запущенного Testcontainer.
-    """
+    """Переопределяет настройки БД Django для использования базы данных из запущенного Testcontainer."""
     # Получаем URL подключения из контейнера
     conn_url = postgres_container.get_connection_url()
 

@@ -1,10 +1,9 @@
 import boto3
 import pytest
-
+from django.conf import settings
+from django.contrib.auth.models import User
 from testcontainers.minio import MinioContainer
 from testcontainers.redis import RedisContainer
-
-from cloud_file_storage import settings
 
 
 @pytest.fixture(scope="session")
@@ -19,10 +18,11 @@ def redis_container():
         yield redis
 
 
-@pytest.fixture
-def django_settings(settings, minio_container, redis_container):
+@pytest.fixture(autouse=True)
+def django_settings(minio_container, redis_container):
     minio_config = minio_container.get_config()
     minio_url = minio_config["endpoint"]
+    minio_url = minio_url if minio_url.startswith(("http://", "https://")) else f"http://{minio_url}"
     minio_access_key = minio_config["access_key"]
     minio_secret_key = minio_config["secret_key"]
 
@@ -40,15 +40,14 @@ def django_settings(settings, minio_container, redis_container):
 @pytest.fixture
 def s3_client(django_settings):
     client = boto3.client(
-        "s3",
+        's3',
         endpoint_url=settings.AWS_S3_ENDPOINT_URL,
         aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
         aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name=getattr(settings, "AWS_S3_REGION_NAME", None),
+        region_name=settings.AWS_S3_REGION_NAME,
     )
 
     bucket_name = settings.AWS_STORAGE_BUCKET_NAME
-    print(bucket_name)
 
     try:
         client.create_bucket(Bucket=bucket_name)
@@ -64,10 +63,7 @@ def s3_client(django_settings):
     client.delete_bucket(Bucket=bucket_name)
 
 
-@pytest.fixture(autouse=True)
-def setup_s3_client_on_self(request, s3_client):
-    """Эта фикстура автоматически прикрепляет s3_client к экземпляру тестового класса."""
-    if hasattr(request, "instance") and request.instance:
-        from file_storage.tests.base import BaseIntegrationTestCase
-        if isinstance(request.instance, BaseIntegrationTestCase):
-            request.s3_client = s3_client
+@pytest.fixture
+def test_user():
+    """Создает и возвращает тестового пользователя."""
+    return User.objects.create_user(username='testuser', password='testpassword')

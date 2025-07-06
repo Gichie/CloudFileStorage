@@ -246,17 +246,18 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
         """
         any_errors: bool = any(res['status'] == 'error' for res in results)
 
-        if any_errors:
-            if all(res['status'] == 'error' for res in results):
-                message = 'Файл не удалось загрузить.'
-            else:
-                message = 'Некоторые файлы были загружены с ошибкой.'
-        else:
-            message = 'Все файлы успешно загружены.'
+        http_status = 207
 
-        http_status = 200
         if any_errors:
-            http_status = 207
+            message = 'Файл не удалось загрузить.'
+            if len(results) == 1:
+                http_status = 400
+            if not all(res['status'] == 'error' for res in results):
+                message = 'Некоторые файлы были загружены с ошибкой.'
+
+        else:
+            http_status = 200
+            message = 'Все файлы успешно загружены.'
 
         return {'message': message, 'results': results}, http_status
 
@@ -274,7 +275,7 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
         if 'relative_paths' in request.POST:
             relative_paths: list[str | None] = [p for p in request.POST.getlist('relative_paths')]
         else:
-            relative_paths = [None]
+            relative_paths = None
         parent_id: str = request.POST.get('parent_id', '')
         files = request.FILES.getlist('files')
 
@@ -317,6 +318,7 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
                     'status': 'error',
                     'error': error_string or 'Ошибка валидации файла.'
                 })
+                continue
 
             try:
                 upload_service.upload_file(uploaded_file, rel_path, parent_object)

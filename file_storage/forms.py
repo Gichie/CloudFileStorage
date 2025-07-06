@@ -6,7 +6,7 @@ from django import forms
 from django.contrib.auth.models import User
 from django.forms import ModelChoiceField
 
-from cloud_file_storage.settings import DATA_UPLOAD_MAX_MEMORY_SIZE
+from cloud_file_storage import settings
 from file_storage.models import FileType, UserFile
 
 INVALID_CHARS_PATTERN = re.compile(r'[\/\\<>:"|?*]')
@@ -64,10 +64,10 @@ class FileUploadForm(forms.ModelForm):
         if file:
             if not self.cleaned_data.get('name'):
                 self.cleaned_data['name'] = os.path.basename(file.name)
-            if file.size > DATA_UPLOAD_MAX_MEMORY_SIZE:
+            if file.size > settings.DATA_UPLOAD_MAX_MEMORY_SIZE:
                 raise forms.ValidationError(
                     f"Файл слишком большой. "
-                    f"Максимальный размер - {DATA_UPLOAD_MAX_MEMORY_SIZE} МБ."
+                    f"Максимальный размер - {settings.DATA_UPLOAD_MAX_MEMORY_SIZE} МБ."
                 )
             return file
         else:

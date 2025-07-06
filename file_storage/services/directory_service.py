@@ -19,7 +19,6 @@ from file_storage.storages.minio import minio_client
 logger = logging.getLogger(__name__)
 
 
-
 class DirectoryService:
     """Сервисный слой для операций с файлами и директориями."""
 
