@@ -13,7 +13,6 @@ class TestUserRegistration(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.signup_url = reverse('users:registration')
-        cls.login_url = reverse('users:login')
         cls.valid_username = 'testuser'
         cls.valid_password = 'testpass123'
         cls.valid_email = 'test@sobaka.gav'
@@ -38,7 +37,7 @@ class TestUserRegistration(TestCase):
         response = self.client.post(self.signup_url, sign_up_data)
 
         # 1. Проверка редиректа
-        self.assertRedirects(response, self.login_url, 302)
+        self.assertRedirects(response, reverse("file_storage:list_files"), 302)
 
         # 2. Проверка создания пользователя в БД
         self.assertEqual(User.objects.count(), current_user_num + 1)
@@ -48,9 +47,9 @@ class TestUserRegistration(TestCase):
         self.assertFalse(new_user.is_staff)
         self.assertFalse(new_user.is_superuser)
         self.assertTrue(new_user.is_active)
-        # Ключ сессии SESSION_KEY отсутствует в текущей сессии пользователя.
-        # Потому что пользователь только зарегистрировался и еще не авторизовался
-        self.assertNotIn(SESSION_KEY, self.client.session)
+        # Ключ сессии SESSION_KEY присутствует в текущей сессии пользователя.
+        # Потому что пользователь только зарегистрировался и автоматически авторизовался.
+        self.assertIn(SESSION_KEY, self.client.session)
 
     def test_unsuccessful_registration_creates_user(self):
         """Тест: Неуспешная регистрация"""

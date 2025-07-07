@@ -7,12 +7,13 @@ from django.contrib.auth.models import User
 from django.forms import ModelChoiceField
 
 from cloud_file_storage import settings
+from file_storage.mixins import ErrorFormatingMixin
 from file_storage.models import FileType, UserFile
 
 INVALID_CHARS_PATTERN = re.compile(r'[\/\\<>:"|?*]')
 
 
-class FileUploadForm(forms.ModelForm):
+class FileUploadForm(ErrorFormatingMixin, forms.ModelForm):
     """Форма для валидации и обработки загрузки одного файла.
 
     Динамически настраивает поле 'parent' для выбора только директорий,

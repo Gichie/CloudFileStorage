@@ -20,10 +20,14 @@ from django.views.generic import ListView
 from cloud_file_storage import settings
 from file_storage.exceptions import DatabaseError, InvalidPathError, NameConflictError, StorageError
 from file_storage.forms import DirectoryCreationForm, FileUploadForm, RenameItemForm
-from file_storage.mixins import DirectoryServiceMixin, FileServiceMixin, QueryParamMixin
+from file_storage.mixins import (
+    DirectoryServiceMixin,
+    FileServiceMixin,
+    QueryParamMixin,
+)
 from file_storage.models import UserFile
 from file_storage.services.factories import create_upload_service
-from file_storage.utils import ui
+from file_storage.utils import status, ui
 from file_storage.utils.path_utils import encode_path_for_url
 
 logger = logging.getLogger(__name__)
@@ -217,50 +221,6 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
 
     user: User
 
-    @staticmethod
-    def _handle_form_validation_error(form: FileUploadForm) -> str:
-        """
-        Формирует строку ошибок из невалидной формы.
-
-        :param form: Экземпляр невалидной формы ``FileUploadForm``.
-        :return: Строка, содержащая все сообщения об ошибках.
-        """
-        error_messages: list[str] = []
-        for field, errors in form.errors.items():
-            error_string = '; '.join(map(str, errors))
-            error_messages.append(f"{field}: {error_string}")
-
-        return "\n".join(error_messages)
-
-    @staticmethod
-    def _get_message_and_status(
-            results: list[dict[str, str | None]]
-    ) -> tuple[dict[str, str | list[dict[str, str | None]]], int]:
-        """
-        Формирует общее сообщение и HTTP-статус на основе результатов обработки файлов.
-
-        :param results: Список словарей, где каждый словарь представляет результат
-                        обработки одного файла и содержит ключи 'status' и 'name'.
-        :return: Кортеж из словаря с сообщением и списком результатов, и HTTP-статуса.
-                 HTTP-статус 200 если все успешно, 207 (Multi-Status) если были ошибки.
-        """
-        any_errors: bool = any(res['status'] == 'error' for res in results)
-
-        http_status = 207
-
-        if any_errors:
-            message = 'Файл не удалось загрузить.'
-            if len(results) == 1:
-                http_status = 400
-            if not all(res['status'] == 'error' for res in results):
-                message = 'Некоторые файлы были загружены с ошибкой.'
-
-        else:
-            http_status = 200
-            message = 'Все файлы успешно загружены.'
-
-        return {'message': message, 'results': results}, http_status
-
     @handle_service_exceptions
     def post(self, request: HttpRequest, *args, **kwargs) -> JsonResponse:
         """
@@ -308,7 +268,7 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
             form = FileUploadForm(form_data, form_files, user=user)
 
             if not form.is_valid():
-                error_string: str = FileUploadAjaxView._handle_form_validation_error(form)
+                error_string: str = form.handle_form_validation_error()
                 logger.warning(
                     f"User '{user.username}': File '{uploaded_file.name}' failed validation. "
                     f"Errors: {error_string}"
@@ -349,7 +309,7 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
                     'error': 'Такой файл уже существует'
                 })
 
-        response_data, status_code = self._get_message_and_status(results)
+        response_data, status_code = status.get_message_and_status(results)
         logger.info(f"User: '{user}'. {response_data.get('message')}. Status_code: {status_code}")
         return JsonResponse(response_data, status=status_code)
 

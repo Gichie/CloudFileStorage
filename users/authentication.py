@@ -2,7 +2,6 @@ from typing import Any
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend
-from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import User
 from django.http import HttpRequest
 
@@ -26,8 +25,6 @@ class EmailAuthBackend(BaseBackend):
         Аутентифицирует пользователя по email и паролю.
 
         :param request: Объект HttpRequest.
-        :param username: Имя пользователя (в данном случае используется как email).
-        :param password: Пароль пользователя.
         :param kwargs: Дополнительные аргументы.
         :return: Объект пользователя в случае успеха, иначе None.
         """

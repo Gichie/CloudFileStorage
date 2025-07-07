@@ -5,7 +5,7 @@ from collections.abc import Iterable
 import boto3
 from botocore.exceptions import ClientError
 from mypy_boto3_s3 import S3Client
-from mypy_boto3_s3.type_defs import ObjectIdentifierTypeDef, DeleteTypeDef
+from mypy_boto3_s3.type_defs import DeleteTypeDef, ObjectIdentifierTypeDef
 
 from cloud_file_storage import settings
 from file_storage.exceptions import StorageError
@@ -151,7 +151,9 @@ class MinioClient:
 
                 delete_request: DeleteTypeDef = {'Objects': chunk}
 
-                self.s3_client.delete_objects(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Delete=delete_request)
+                self.s3_client.delete_objects(
+                    Bucket=settings.AWS_STORAGE_BUCKET_NAME, Delete=delete_request
+                )
                 logger.info(f"{len(chunk)} objects removed")
         except ClientError as e:
             logger.error(f"Error while deleting objects by prefix: {prefix}. {e}", exc_info=True)

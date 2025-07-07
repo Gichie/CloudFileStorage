@@ -1,6 +1,6 @@
 from typing import Any
 
-from django.contrib.auth.models import User, AnonymousUser
+from django.contrib.auth.models import AnonymousUser
 from django.http.request import HttpRequest
 from django.utils.functional import cached_property
 from django.views.generic.base import ContextMixin
@@ -72,3 +72,22 @@ class FileServiceMixin:
         """Возвращает экземпляр FileService, инициализированный для текущего пользователя."""
         assert not isinstance(self.request.user, AnonymousUser), "Authentication required"
         return FileService(user=self.request.user, s3_client=minio_client)
+
+
+class ErrorFormatingMixin:
+    """Миксин для FileUploadForm"""
+
+    def handle_form_validation_error(self) -> str:
+        """
+        Формирует строку ошибок из невалидной формы.
+
+        :return: Строка, содержащая все сообщения об ошибках.
+        """
+        if not self.errors:
+            return ""
+        error_messages: list[str] = []
+        for field, errors in self.errors.items():
+            error_string = '; '.join(map(str, errors))
+            error_messages.append(f"{field}: {error_string}")
+
+        return "\n".join(error_messages)

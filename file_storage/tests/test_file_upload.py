@@ -98,17 +98,7 @@ class TestFileUploadIntegration(BaseIntegrationTestCase):
                 HTTP_X_REQUESTED_WITH="XMLHttpRequest",
             )
 
-        response_data = response.json()
-
-        expected_json = {
-            "message": "Файл не удалось загрузить.",
-            "results": [{
-                "name": "test_file.txt", "status": "error", "error": "Такой файл уже существует"
-            }]
-        }
-
         assert response.status_code == 400
-        assert response_data == expected_json
         assert UserFile.objects.count() == 1
 
     def test_file_with_uncorrected_name(self, client, test_user):

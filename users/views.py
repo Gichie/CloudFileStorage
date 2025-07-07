@@ -1,3 +1,4 @@
+from django.contrib.auth import login
 from django.contrib.auth.views import LoginView
 from django.contrib.messages.views import SuccessMessageMixin
 from django.urls import reverse_lazy
@@ -29,5 +30,12 @@ class RegistrationUser(SuccessMessageMixin, CreateView):
     form_class = RegistrationForm
     template_name = 'users/registration.html'
     extra_context = {'title': 'Регистрация'}
-    success_url = reverse_lazy('users:login')
+    success_url = reverse_lazy('file_storage:list_files')
     success_message = 'Регистрация прошла успешно!'
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+
+        self.object.backend = 'django.contrib.auth.backends.ModelBackend'
+        login(self.request, self.object)
+        return response
