@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 LOGGING_DIR = BASE_DIR / 'logs'
-LOGGING_DIR.mkdir(parents=True, exist_ok=True)
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

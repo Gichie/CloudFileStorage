@@ -49,6 +49,7 @@ services:
     restart: always
     command: gunicorn cloud_file_storage.wsgi:application --bind 0.0.0.0:8000 -w 3
     volumes:
+      - ./logs:/app/logs
       - .:/app
       - static_volume:/app/staticfiles
     env_file: .env
