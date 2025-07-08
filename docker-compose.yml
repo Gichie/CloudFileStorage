@@ -47,7 +47,7 @@ services:
   web:
     build: .
     restart: always
-    command: gunicorn cloud_file_storage.wsgi:application --bind 0.0.0.0:8000 -w 3"
+    command: gunicorn cloud_file_storage.wsgi:application --bind 0.0.0.0:8000 -w 3
     volumes:
       - .:/app
       - static_volume:/app/staticfiles
