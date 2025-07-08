@@ -99,7 +99,6 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, DirectoryServiceMixin, L
         :param kwargs: Именованные аргументы.
         """
         super().setup(request, *args, **kwargs)
-
         self.user = request.user
         self.current_path_unencoded: str = request.GET.get('path', '')
         self.current_directory: UserFile | None = self.service.get_current_directory_from_path(
