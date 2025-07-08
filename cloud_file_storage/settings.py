@@ -18,15 +18,6 @@ LOGGING = {
         },
     },
     'handlers': {
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': LOGGING_DIR / 'logs.log',
-            'maxBytes': 4 * 1024 * 1024,
-            'backupCount': 2,
-            'encoding': 'utf-8',
-            'formatter': 'verbose',
-        },
         'console': {
             'level': 'INFO',
             'class': 'logging.StreamHandler',
@@ -35,11 +26,11 @@ LOGGING = {
     },
     'loggers': {
         '': {  # Пустая строка означает корневой логгер
-            'handlers': ['file', 'console'],
+            'handlers': ['console'],
             'level': 'INFO',
         },
         'django': {
-            'handlers': ['file', 'console'],
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': False
         },
