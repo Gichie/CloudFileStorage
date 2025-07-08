@@ -44,41 +44,33 @@ services:
       timeout: 20s
       retries: 3
 
-#  web:
-#    build: .
-#    restart: always
-#    command: sh -c "chown -R userdj:groupdjango /app/staticfiles &&
-#                    python manage.py collectstatic --noinput --clear &&
-#                    python manage.py migrate &&
-#                    gunicorn cloud_file_storage.wsgi:application \
-#                     --bind 0.0.0.0:8000 \
-#                     --user userdj \
-#                     --group groupdjango \
-#                     -w 1 \
-#                     --reload"
-#    volumes:
-#      - .:/app
-#      - static_volume:/app/staticfiles
-#    env_file: .env
-#    depends_on:
-#      - db
-#      - redis
-#      - minio
-#    networks:
-#      - my_django_network
+  web:
+    build: .
+    restart: always
+    command: gunicorn cloud_file_storage.wsgi:application --bind 0.0.0.0:8000 -w 3"
+    volumes:
+      - .:/app
+      - static_volume:/app/staticfiles
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+      - minio
+    networks:
+      - my_django_network
 
   nginx:
     image: nginx:latest
     container_name: nginx-server
     restart: always
     ports:
-      - "80:8088"
+      - "80:80"
     volumes:
       - ./static_collected/:/app/static_collected/:ro
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx_logs:/var/log/nginx
-#    depends_on:
-#      - web
+    depends_on:
+      - web
     networks:
       - my_django_network
 

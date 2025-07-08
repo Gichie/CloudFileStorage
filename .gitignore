@@ -3,6 +3,10 @@
 /.idea/
 .env
 /staticfiles/
+/mediafiles/
 /todo.txt
 /nginx_logs/
 /logs/logs.log
+__pycache__/
+*.pyc
+db.sqlite3
