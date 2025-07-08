@@ -184,8 +184,8 @@ LOGOUT_REDIRECT_URL = 'users:login'
 # Настройка Redis для хранения сессий
 SESSION_ENGINE = 'redis_sessions.session'
 
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")  # for local development
-# REDIS_HOST = os.getenv("REDIS_HOST", "redis")  # for docker-compose
+# REDIS_HOST = os.getenv("REDIS_HOST", "localhost")  # for local development
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")  # for docker-compose
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 REDIS_DB = int(os.getenv("REDIS_DB", 0))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
