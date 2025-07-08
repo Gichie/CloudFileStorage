@@ -13,6 +13,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 WORKDIR /app
 
+RUN mkdir -p /app/logs
+
 COPY . .
 
 RUN mkdir -p /app/staticfiles && \
