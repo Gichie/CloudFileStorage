@@ -24,7 +24,6 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: my_minio_container
     ports:
       - "9000:9000"
       - "9001:9001"
