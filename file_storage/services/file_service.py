@@ -121,7 +121,7 @@ class FileService:
             raise StorageError(f"Файл: '{user_file.name}' не найден")
 
         try:
-            presigned_url: str = self.s3_client.s3_public_client.generate_presigned_url(
+            presigned_url: str = self.s3_client.s3_client.generate_presigned_url(
                 'get_object',
                 Params={
                     'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
