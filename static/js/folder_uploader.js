@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (totalSize > MAX_UPLOAD_SIZE_BYTES) {
             // Показываем ошибку МГНОВЕННО, до отправки запроса
             showFinalStatusMessage(
-                `Ошибка: Общий размер папки (${(totalSize / 1024 / 1024).toFixed(2)} МБ) превышает лимит в ${MAX_UPLOAD_SIZE_BYTES} МБ.`,
+                `Ошибка: Общий размер папки (${(totalSize / 1024 / 1024).toFixed(2)} МБ) превышает лимит в ${(MAX_UPLOAD_SIZE_BYTES / 1024 / 1024).toFixed(2)} МБ.`,
                 true
             );
             event.target.value = null; // Сбрасываем инпут
