@@ -326,6 +326,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const currentFolderId = dropZone.dataset.currentFolderId || null;
             const formData = new FormData();
+            const csrftoken = getCookie('csrftoken');
+
+            formData.append('csrfmiddlewaretoken', csrftoken);
 
             files.forEach(file => {
                 formData.append('files', file, file.name);
@@ -347,7 +350,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // Использование XMLHttpRequest для отслеживания прогресса
             const xhr = new XMLHttpRequest();
             xhr.open('POST', uploadUrl, true);
-            xhr.setRequestHeader('X-CSRFToken', csrftoken);
+            //xhr.setRequestHeader('X-CSRFToken', csrftoken);
 
             xhr.upload.onprogress = function (event) {
                 if (event.lengthComputable) {
