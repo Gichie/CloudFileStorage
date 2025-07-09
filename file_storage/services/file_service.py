@@ -78,9 +78,12 @@ class FileService:
                     f"UserFile ID: {user_file_instance.id}, Minio Path: {user_file_instance.file.name}"
                 )
 
-        except SuspiciousFileOperation as e:
-            logger.warning(f"Loading error: path too long {log_prefix}: {e}", exc_info=True)
-            raise InvalidPathError() from e
+        except SuspiciousFileOperation as err:
+            logger.warning(f"Loading error: path too long {log_prefix}: {err}", exc_info=True)
+            raise InvalidPathError() from err
+        except Exception as err:
+            logger.error(f"Неизвестная ошибка в create_file. {log_prefix}: {err}", exc_info=True)
+            raise Exception from err
 
     def generate_download_url(self, file_id: UUID) -> str:
         """Генерирует URL для загрузки одного файла.
