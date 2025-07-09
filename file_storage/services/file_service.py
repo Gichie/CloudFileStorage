@@ -1,6 +1,8 @@
 import logging
 from uuid import UUID
 
+import boto3
+from botocore.config import Config
 from botocore.exceptions import ParamValidationError
 from django.contrib.auth.models import User
 from django.core.exceptions import SuspiciousFileOperation
@@ -119,7 +121,7 @@ class FileService:
             raise StorageError(f"Файл: '{user_file.name}' не найден")
 
         try:
-            presigned_url: str = self.s3_client.s3_client.generate_presigned_url(
+            presigned_url: str = self.s3_client.s3_public_client.generate_presigned_url(
                 'get_object',
                 Params={
                     'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
@@ -136,4 +138,35 @@ class FileService:
         logger.info(
             f"File downloaded successfully. s3_key: {s3_key}, presigned_url: {presigned_url}")
 
+        # --- НАЧАЛО ВРЕМЕННОГО КОДА ДЛЯ ОТЛАДКИ ---
+
+        # Создаем конфигурацию прямо здесь и сейчас
+        s3_config = Config(
+            signature_version=settings.AWS_S3_SIGNATURE_VERSION,
+            s3={'addressing_style': 'path'}
+        )
+
+        # Создаем boto3 клиент С ПРАВИЛЬНЫМ ПУБЛИЧНЫМ endpoint'ом
+        public_s3_client = boto3.client(
+            's3',
+            endpoint_url=f"http://{settings.AWS_S3_CUSTOM_DOMAIN}",  # <--- Используем публичный URL
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            region_name=settings.AWS_S3_REGION_NAME,
+            config=s3_config,
+        )
+
+        # Генерируем URL
+        presigned_url = public_s3_client.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
+                'Key': s3_key,
+                'ResponseContentDisposition': f'attachment; filename="{user_file.name}"'
+            },
+            ExpiresIn=3600
+        )
+        logger.info(
+            f"File downloaded successfully. s3_key: {s3_key}, presigned_url_test2: {presigned_url}")
+        # --- КОНЕЦ ВРЕМЕННОГО КОДА ДЛЯ ОТЛАДКИ ---
         return presigned_url

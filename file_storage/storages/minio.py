@@ -32,6 +32,7 @@ class MinioClient:
         гибко управлять его конфигурацией и упрощает тестирование.
         """
         self._s3_client: S3Client | None = None
+        self._s3_public_client: S3Client | None = None
 
     @property
     def s3_client(self) -> S3Client:
@@ -51,6 +52,29 @@ class MinioClient:
                 config=s3_config,
             )
         return self._s3_client
+
+    @property
+    def s3_public_client(self) -> S3Client:
+        """
+        S3 клиент для генерации ПУБЛИЧНЫХ URL.
+        Использует внешний адрес из AWS_S3_CUSTOM_DOMAIN.
+        """
+        if self._s3_public_client is None:
+            # Конфигурация та же самая
+            s3_config = Config(
+                signature_version=settings.AWS_S3_SIGNATURE_VERSION,
+                s3={'addressing_style': 'path'}
+            )
+            self._s3_public_client = boto3.client(
+                's3',
+                # КЛЮЧЕВОЕ ОТЛИЧИЕ: используем ПУБЛИЧНЫЙ адрес!
+                endpoint_url=f"http://{settings.AWS_S3_CUSTOM_DOMAIN}",
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                region_name=settings.AWS_S3_REGION_NAME,
+                config=s3_config,
+            )
+        return self._s3_public_client
 
     def create_empty_directory_marker(self, bucket: str, key: str) -> None:
         """Создаёт пустой объект в S3-совместимом хранилище (MinIO) для обозначения директории.
