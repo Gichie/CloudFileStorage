@@ -287,7 +287,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         function uploadFiles(files) {
-            const MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024; // 500 МБ (должно совпадать с лимитом Nginx)
+            const MAX_UPLOAD_SIZE_BYTES = window.MAX_UPLOAD_SIZE_BYTES; // 500 МБ (должно совпадать с лимитом Nginx)
             let totalSize = 0;
             let largeFiles = []; // Массив для имен слишком больших файлов
 
