@@ -75,10 +75,10 @@ STORAGES = {
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_STORAGE_BUCKET_NAME = 'file-storage-bucket'  # Имя вашего бакета
-AWS_S3_ENDPOINT_URL = 'http://localhost:9000'  # URL Minio сервера
+AWS_S3_ENDPOINT_URL = 'http:///minio:9000'  # URL Minio сервера
 AWS_S3_REGION_NAME = 'us-east-1'
 AWS_S3_SIGNATURE_VERSION = 's3v4'
-AWS_S3_CUSTOM_DOMAIN = f'localhost:9000/{AWS_STORAGE_BUCKET_NAME}'
+AWS_S3_CUSTOM_DOMAIN = f'/minio:9000/{AWS_STORAGE_BUCKET_NAME}'
 AWS_S3_OBJECT_PARAMETERS = {
     'CacheControl': 'max-age=86400',
 }
