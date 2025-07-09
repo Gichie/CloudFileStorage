@@ -33,6 +33,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_BROWSER_REDIRECT_URL: http://84.54.56.10:9001
+    env_file: .env
     volumes:
       - minio_data:/data
     networks:
