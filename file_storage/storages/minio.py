@@ -3,6 +3,7 @@ import logging
 from collections.abc import Iterable
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from mypy_boto3_s3 import S3Client
 from mypy_boto3_s3.type_defs import DeleteTypeDef, ObjectIdentifierTypeDef
@@ -35,6 +36,11 @@ class MinioClient:
     @property
     def s3_client(self) -> S3Client:
         """Инициализация S3 клиента."""
+        s3_config = Config(
+            signature_version=settings.AWS_S3_SIGNATURE_VERSION,
+            # Явно указываем стиль адресации 'path', это критически важно!
+            s3={'addressing_style': 'path'}
+        )
         if self._s3_client is None:
             self._s3_client = boto3.client(
                 's3',
@@ -42,6 +48,7 @@ class MinioClient:
                 aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
                 aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
                 region_name=settings.AWS_S3_REGION_NAME,
+                config=s3_config,
             )
         return self._s3_client
 
