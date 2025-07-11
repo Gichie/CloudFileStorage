@@ -4,6 +4,8 @@ from pathlib import Path
 from django.contrib import messages
 from dotenv import load_dotenv
 
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = os.environ.get('SECRET_KEY')
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -39,13 +41,6 @@ LOGGING = {
 
 load_dotenv()
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY')
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
-ALLOWED_HOSTS = ['84.54.56.10']
-
 # Настройка для debug_toolbar
 INTERNAL_IPS = ["127.0.0.1"]
 
@@ -71,21 +66,16 @@ STORAGES = {
     },
 }
 
-
-# Настроки minio
+# minio
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_STORAGE_BUCKET_NAME = 'file-storage-bucket'  # Имя вашего бакета
-AWS_S3_ENDPOINT_URL = 'http://minio:9000'  # URL Minio сервера
 AWS_S3_REGION_NAME = 'us-east-1'
 AWS_S3_SIGNATURE_VERSION = 's3v4'
-AWS_S3_CUSTOM_DOMAIN = f'84.54.56.10:9000'
 AWS_S3_OBJECT_PARAMETERS = {
     'CacheControl': 'max-age=86400',
 }
 AWS_DEFAULT_ACL = None  # Или 'public-read' если файлы должны быть публичными
-AWS_QUERYSTRING_AUTH = True
-AWS_S3_ADDRESSING_STYLE = 'path'
 
 # Максимальный размер загружаемого файла, хранящегося в оперативной памяти (25МБ)
 FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
@@ -172,7 +162,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static'),
+    os.path.join(BASE_DIR, '../../static'),
 ]
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'  # for docker
@@ -185,20 +175,6 @@ LOGOUT_REDIRECT_URL = 'users:login'
 
 # Настройка Redis для хранения сессий
 SESSION_ENGINE = 'redis_sessions.session'
-
-# REDIS_HOST = os.getenv("REDIS_HOST", "localhost")  # for local development
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")  # for docker-compose
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_DB = int(os.getenv("REDIS_DB", 0))
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
-
-SESSION_REDIS = {
-    'host': REDIS_HOST,
-    'port': REDIS_PORT,
-    'db': REDIS_DB,
-    'password': REDIS_PASSWORD,
-    'prefix': 'session',
-}
 
 MESSAGE_TAGS = {
     messages.ERROR: 'danger',
