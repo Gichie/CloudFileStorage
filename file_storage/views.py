@@ -5,7 +5,7 @@ from functools import wraps
 from typing import Any
 from uuid import UUID
 
-from django.conf.global_settings import DATA_UPLOAD_MAX_NUMBER_FILES, DATA_UPLOAD_MAX_MEMORY_SIZE
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
@@ -146,8 +146,8 @@ class FileListView(QueryParamMixin, LoginRequiredMixin, DirectoryServiceMixin, L
         context['current_directory'] = self.current_directory
         context['current_path_unencoded'] = self.current_path_unencoded
         context['breadcrumbs'] = ui.generate_breadcrumbs(self.current_path_unencoded)
-        context['DATA_UPLOAD_MAX_NUMBER_FILES'] = DATA_UPLOAD_MAX_NUMBER_FILES
-        context['DATA_UPLOAD_MAX_MEMORY_SIZE'] = DATA_UPLOAD_MAX_MEMORY_SIZE
+        context['DATA_UPLOAD_MAX_NUMBER_FILES'] = settings.DATA_UPLOAD_MAX_NUMBER_FILES
+        context['DATA_UPLOAD_MAX_MEMORY_SIZE'] = settings.DATA_UPLOAD_MAX_MEMORY_SIZE
 
         # Формирование URL для кнопки "Назад"
         context['parent_level_url'] = ui.get_parent_url(

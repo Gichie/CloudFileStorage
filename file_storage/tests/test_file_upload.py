@@ -6,7 +6,6 @@ from django.core.exceptions import SuspiciousFileOperation
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
-from cloud_file_storage.settings import DATA_UPLOAD_MAX_MEMORY_SIZE
 from file_storage.models import UserFile
 from file_storage.tests.base import BaseIntegrationTestCase
 
@@ -115,7 +114,7 @@ class TestFileUploadIntegration(BaseIntegrationTestCase):
         """Попытка загрузить файл с некорректным размером файла: больше чем лимит."""
         client.force_login(test_user)
 
-        limit_size = DATA_UPLOAD_MAX_MEMORY_SIZE + 1
+        limit_size = settings.DATA_UPLOAD_MAX_MEMORY_SIZE + 1
 
         file_name = "large_file.ogo"
 

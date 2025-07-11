@@ -3,7 +3,7 @@ import re
 from typing import Any, cast
 
 from django import forms
-from django.conf.global_settings import DATA_UPLOAD_MAX_MEMORY_SIZE
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.forms import ModelChoiceField
 
@@ -65,10 +65,10 @@ class FileUploadForm(ErrorFormatingMixin, forms.ModelForm):
         if file:
             if not self.cleaned_data.get('name'):
                 self.cleaned_data['name'] = os.path.basename(file.name)
-            if file.size > DATA_UPLOAD_MAX_MEMORY_SIZE:
+            if file.size > settings.DATA_UPLOAD_MAX_MEMORY_SIZE:
                 raise forms.ValidationError(
                     f"Файл слишком большой. "
-                    f"Максимальный размер - {DATA_UPLOAD_MAX_MEMORY_SIZE} МБ."
+                    f"Максимальный размер - {settings.DATA_UPLOAD_MAX_MEMORY_SIZE} МБ."
                 )
             return file
         else:
