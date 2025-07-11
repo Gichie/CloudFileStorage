@@ -49,7 +49,10 @@ services:
       args:
         - DJANGO_SETTINGS_MODULE=cloud_file_storage.settings.production
     restart: always
-    command: gunicorn cloud_file_storage.wsgi:application --bind 0.0.0.0:8000 -w 3
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --no-input &&
+             gunicorn cloud_file_storage.wsgi:application --bind 0.0.0.0:8000 -w 3"
     volumes:
       - ./logs:/app/logs
       - static_volume:/app/staticfiles

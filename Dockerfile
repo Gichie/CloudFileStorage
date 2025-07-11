@@ -31,6 +31,3 @@ RUN mkdir -p /app/staticfiles && \
 # Передаем владение всем кодом нашему пользователю
 RUN chown -R userdj:groupdjango /app
 USER userdj
-
-# Собираем статику от имени userdj
-RUN python manage.py collectstatic --no-input
