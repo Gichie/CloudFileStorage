@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY')
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 LOGGING_DIR = BASE_DIR / 'logs'
 LOGGING = {
