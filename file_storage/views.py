@@ -310,7 +310,7 @@ class FileUploadAjaxView(LoginRequiredMixin, DirectoryServiceMixin, View):
 
         response_data, status_code = status.get_message_and_status(results)
         logger.info(f"User: '{user}'. {response_data.get('message')}. Status_code: {status_code}")
-        return JsonResponse(response_data, status=status_code)
+        return JsonResponse(response_data, status=status_code, json_dumps_params={'ensure_ascii': False})
 
 
 class FileSearchView(QueryParamMixin, LoginRequiredMixin, ListView):

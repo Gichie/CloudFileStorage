@@ -420,29 +420,47 @@ document.addEventListener('DOMContentLoaded', function () {
                         uploadProgressBar.textContent = 'Ошибка!';
                     }
                 } else { // Ошибка HTTP запроса
-                    let errorMsg;
-                    if (xhr.status === 413) {
-                        errorMsg = 'Ошибка: Файл или набор файлов слишком большой. Лимит на сервере превышен.';
-                    } else {
-                        errorMsg = `Ошибка сервера: ${xhr.status} ${xhr.statusText}`;
-                        try {
-                            const errData = JSON.parse(xhr.responseText);
-                            if (errData.error) { // Если бэкенд шлет JSON с полем error
-                                errorMsg = errData.error;
-                            } else if (errData.detail) { // DRF часто использует detail
-                                errorMsg = errData.detail;
-                            } else if (typeof errData === 'string' && errData.length < 200) { // Если просто строка ошибки
-                                errorMsg = errData;
-                            }
-                            // Иначе оставляем исходное сообщение xhr.statusText или добавляем тело ответа, если оно не слишком длинное
-                            else if (xhr.responseText && xhr.responseText.length < 500) {
-                                errorMsg += `<br><small>${xhr.responseText.replace(/</g, "<").replace(/>/g, ">")}</small>`;
-                            }
+                    let errorMsgHtml = ''; // Будем формировать сразу HTML
+                    uploadProgressBar.classList.remove('bg-success');
+                    uploadProgressBar.classList.add('bg-danger');
+                    uploadProgressBar.textContent = 'Ошибка!';
 
-                        } catch (e) { /* Оставляем errorMsg как есть, если ответ не JSON */
+                    try {
+                        const errData = JSON.parse(xhr.responseText);
+
+                        // ПРОВЕРЯЕМ НАШУ СТАНДАРТНУЮ СТРУКТУРУ ОТВЕТА
+                        if (errData.message && Array.isArray(errData.results)) {
+                            errorMsgHtml += `<p class="text-danger">${errData.message}</p>`; // Главное сообщение об ошибке
+                            errorMsgHtml += '<ul>';
+                            errData.results.forEach(result => {
+                                // Отображаем только файлы с ошибками
+                                if (result.status === 'error') {
+                                    errorMsgHtml += `<li>${result.name}: <span class="text-danger">${result.error || 'Неизвестная ошибка'}</span></li>`;
+                                }
+                            });
+                            errorMsgHtml += '</ul>';
+                        } else if (errData.error) { // Старая проверка для совместимости
+                            errorMsgHtml = `<p class="text-danger">${errData.error}</p>`;
+                        } else if (errData.detail) { // Старая проверка для DRF-подобных ответов
+                            errorMsgHtml = `<p class="text-danger">${errData.detail}</p>`;
+                        } else {
+                            // Если структура ответа неизвестна, показываем как есть
+                            errorMsgHtml = `<p class="text-danger">Ошибка сервера: ${xhr.status} ${xhr.statusText}</p>`;
+                            if (xhr.responseText) {
+                                // Исправлено: .replace для защиты от XSS
+                                errorMsgHtml += `<br><small>${xhr.responseText.replace(/</g, "<").replace(/>/g, ">")}</small>`;
+                            }
+                        }
+                    } catch (e) {
+                        // Если ответ - не JSON
+                        if (xhr.status === 413) {
+                            errorMsgHtml = '<p class="text-danger">Ошибка: Файл или набор файлов слишком большой. Лимит на сервере превышен.</p>';
+                        } else {
+                            errorMsgHtml = `<p class="text-danger">Ошибка сервера: ${xhr.status} ${xhr.statusText}</p>`;
                         }
                     }
-                    uploadMessages.innerHTML = `<p class="text-danger">${errorMsg}</p>`;
+
+                    uploadMessages.innerHTML = errorMsgHtml;
                     uploadProgressBar.classList.remove('bg-success');
                     uploadProgressBar.classList.add('bg-danger');
                     uploadProgressBar.textContent = 'Ошибка!';
