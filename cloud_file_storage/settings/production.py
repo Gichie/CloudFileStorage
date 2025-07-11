@@ -12,3 +12,11 @@ AWS_S3_ENDPOINT_URL = 'http://minio:9000'  # URL Minio сервера
 AWS_S3_CUSTOM_DOMAIN = f'84.54.56.10:9000'
 AWS_QUERYSTRING_AUTH = True
 AWS_S3_ADDRESSING_STYLE = 'path'
+
+SESSION_REDIS = {
+    'host': 'redis',  # для docker compose
+    'port': 6379,
+    'db': 0,
+    'password': None,
+    'prefix': 'session',
+}
