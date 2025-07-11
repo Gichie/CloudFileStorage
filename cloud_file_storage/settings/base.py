@@ -4,6 +4,7 @@ from pathlib import Path
 from django.contrib import messages
 from dotenv import load_dotenv
 
+load_dotenv()
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY')
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -38,8 +39,6 @@ LOGGING = {
         },
     },
 }
-
-load_dotenv()
 
 # Настройка для debug_toolbar
 INTERNAL_IPS = ["127.0.0.1"]

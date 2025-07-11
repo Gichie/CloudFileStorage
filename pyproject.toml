@@ -30,18 +30,16 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-
-# Набор правил для активации.
-# E, F: стандартные правила flake8 (pycodestyle, pyflakes)
-# I: правила isort (сортировка импортов)
-# UP: правила pyupgrade (модернизация синтаксиса)
-# B: правила flake8-bugbear (поиск вероятных багов)
-# DJ: правила flake8-django (специфичные для Django)
 select = ["E", "F", "I", "UP", "B", "DJ"]
-
-# Можно игнорировать конкретные правила.
-# Например, DJ001 часто мешает, если вы используете CharField без max_length в моделях форм
-# ignore = ["DJ001"]
-
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "cloud_file_storage.settings.base"
+
+[tool.mypy]
+plugins = "mypy_django_plugin.main"
+ignore_missing_imports = "True"
+
+[tool.django-stubs]
+django_settings_module = "cloud_file_storage.settings.base"
