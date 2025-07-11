@@ -44,7 +44,10 @@ services:
       retries: 3
 
   web:
-    build: .
+    build:
+      context: .
+      args:
+        - DJANGO_SETTINGS_MODULE=myproject.settings.production
     restart: always
     command: gunicorn cloud_file_storage.wsgi:application --bind 0.0.0.0:8000 -w 3
     volumes:
