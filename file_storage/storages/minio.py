@@ -5,10 +5,10 @@ from collections.abc import Iterable
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from django.conf import settings
 from mypy_boto3_s3 import S3Client
 from mypy_boto3_s3.type_defs import DeleteTypeDef, ObjectIdentifierTypeDef
 
-from cloud_file_storage import settings
 from file_storage.exceptions import StorageError
 from file_storage.models import FileType, UserFile
 

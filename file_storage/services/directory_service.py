@@ -4,13 +4,13 @@ from collections.abc import Iterator
 from uuid import UUID
 
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import IntegrityError, router, transaction
 from django.db.models import Value
 from django.db.models.functions import Replace
 from django.http import Http404
 
-from cloud_file_storage import settings
 from file_storage.exceptions import DatabaseError, NameConflictError, StorageError
 from file_storage.models import FileType, UserFile
 from file_storage.services.archive_service import ZipStreamGenerator

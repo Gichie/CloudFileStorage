@@ -2,10 +2,10 @@ import logging
 from collections.abc import Iterator
 
 from botocore.exceptions import ClientError
+from django.conf import settings
 from django.db.models import QuerySet
 from zipstream import ZIP_DEFLATED, ZipStream
 
-from cloud_file_storage import settings
 from file_storage.exceptions import StorageError
 from file_storage.models import FileType, UserFile
 from file_storage.storages.minio import minio_client
