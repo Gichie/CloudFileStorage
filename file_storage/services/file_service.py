@@ -1,16 +1,13 @@
 import logging
 from uuid import UUID
 
-import boto3
-from botocore.config import Config
 from botocore.exceptions import ParamValidationError
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.exceptions import SuspiciousFileOperation
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 
-from cloud_file_storage import settings
-from cloud_file_storage.settings import PRESIGNED_URL_LIFETIME_SECONDS
 from file_storage.exceptions import DatabaseError, InvalidPathError, NameConflictError, StorageError
 from file_storage.models import FileType, UserFile
 from file_storage.storages.minio import MinioClient, minio_client
@@ -128,7 +125,7 @@ class FileService:
                     'Key': s3_key,
                     'ResponseContentDisposition': f'attachment; filename="{user_file.name}"'
                 },
-                ExpiresIn=PRESIGNED_URL_LIFETIME_SECONDS  # Длительность жизни ссылки
+                ExpiresIn=settings.PRESIGNED_URL_LIFETIME_SECONDS  # Длительность жизни ссылки
             )
         except ParamValidationError as e:
             logger.error(f"{e}", exc_info=True)
