@@ -36,10 +36,31 @@
     cd CloudFileStorage
     ```
 
-2.  **Создайте файл `.env`:**
+2.  **Создайте файл `.env`:** и заполните своими данными
     ```bash
     nano .env
     ```
+    Содержимое файла .env.
+
+```env
+# Django settings
+SECRET_KEY=your-super-secret-key-here
+
+DJANGO_SETTINGS_MODULE=cloud_file_storage.settings.local
+
+# Postgres settings
+POSTGRES_DB=cloud_db
+POSTGRES_USER=cloud_user
+POSTGRES_PASSWORD=cloud_password
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+
+# MinIO/S3 settings
+MINIO_ROOT_USER=RsEHteEk
+MINIO_ROOT_PASSWORD=MwCNJgFo
+AWS_ACCESS_KEY_ID=RsEHteEk
+AWS_SECRET_ACCESS_KEY=MwCNJgFo
+```
 
 3.  **Соберите и запустите контейнеры:**
     ```bash
@@ -59,27 +80,3 @@
 6.  Проект будет доступен по адресу: `http://localhost:8000`
 
 7.  Веб-интерфейс MinIO будет доступен по адресу: `http://localhost:9001` (используйте `MINIO_ROOT_USER` и `MINIO_ROOT_PASSWORD` для входа).
-
-## Переменные окружения
-
-Содержимое файла .env. Поменяйте на свои значения.
-
-```env
-# Django settings
-SECRET_KEY=your-super-secret-key-here
-
-DJANGO_SETTINGS_MODULE=cloud_file_storage.settings.local
-
-# Postgres settings
-POSTGRES_DB=cloud_db
-POSTGRES_USER=cloud_user
-POSTGRES_PASSWORD=cloud_password
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-
-# MinIO/S3 settings
-MINIO_ROOT_USER=enBJZqruq
-MINIO_ROOT_PASSWORD=tPCQuroCq
-AWS_ACCESS_KEY_ID=enBJZqruq
-AWS_SECRET_ACCESS_KEY=tPCQuroCq
-```
