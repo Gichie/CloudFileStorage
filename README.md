@@ -64,19 +64,30 @@ AWS_SECRET_ACCESS_KEY=MwCNJgFo
 
 3.  **Соберите и запустите контейнеры:**
     ```bash
-    docker compose up --build -d
+    docker compose -f docker-compose-services.yml up --build -d
     ```
-
-4.  **Примените миграции:**
+    
+4.  **Создайте и активируйте виртуальное окружение:**
     ```bash
-    docker compose exec web python manage.py migrate
+    python -m venv venv
+    source venv/Scripts/activate
     ```
-
-5. **Соберите статические файлы:**
+    
+5.  **Установите зависимости:**
     ```bash
-    docker compose exec web python manage.py collectstatic --no-input
+    pip install -r requirements.txt
+    ```    
+
+6.  **Примените миграции:**
+    ```bash
+    python manage.py migrate
     ```
+7.  **Запустите приложение:**
+    ```bash
+    python manage.py runserver
+    ```
+8.  Проект будет доступен по адресу: `http://localhost:8000`
 
-6.  Проект будет доступен по адресу: `http://localhost:8000`
+9.  Веб-интерфейс MinIO будет доступен по адресу: `http://localhost:9001` (используйте `MINIO_ROOT_USER` и `MINIO_ROOT_PASSWORD` для входа).
 
-7.  Веб-интерфейс MinIO будет доступен по адресу: `http://localhost:9001` (используйте `MINIO_ROOT_USER` и `MINIO_ROOT_PASSWORD` для входа).
+10.  Создайте в MinIO бакет с названием `file-storage-bucket`
